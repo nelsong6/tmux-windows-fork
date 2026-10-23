@@ -634,7 +634,8 @@ client_exec(const char *shell, const char *shellcmd)
 	log_debug("shell %s, command %s", shell, shellcmd);
 	proc_clear_signals(client_proc, 1);
 
-	snprintf(cmd, sizeof cmd, "\"%s\" /c %s", shell, shellcmd);
+	snprintf(cmd, sizeof cmd, "\"%s\" %s %s", shell,
+	    win32_shell_command_flag(shell), shellcmd);
 	system(cmd);
 	exit(0);
 #else

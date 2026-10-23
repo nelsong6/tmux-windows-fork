@@ -10,6 +10,9 @@
 #include <string.h>
 
 #include "win32-platform.h"
+#include <dbghelp.h>
+
+#pragma comment(lib, "dbghelp.lib")
 
 /* External: defined in win32-compat.c */
 void win32_child_exited(pid_t pid, int status);
@@ -168,47 +171,144 @@ win32_process_watch(HANDLE hProcess, pid_t pid)
 }
 
 /*
- * Spawn a non-PTY process with its stdout/stdin connected to the given socket.
- * Returns the child PID on success, -1 on failure.
+ * A child's stdio is a pair of pipes, copied to and from the server's socket by
+ * two threads. A program can't use a socket as its stdout (cmd.exe and pwsh
+ * both exited 1 with no output), and the CRT can't take one either.
+ */
+struct spawn_bridge {
+	HANDLE		 out;	/* read end of the child's stdout/stderr */
+	HANDLE		 in;	/* write end of the child's stdin */
+	SOCKET		 sock;
+	volatile LONG	 refs;
+};
+
+static void
+spawn_bridge_release(struct spawn_bridge *b)
+{
+	if (InterlockedDecrement(&b->refs) != 0)
+		return;
+	closesocket(b->sock);
+	free(b);
+}
+
+/* Child output to the server; at EOF the socket closes and the job sees EOF. */
+static DWORD WINAPI
+spawn_bridge_out(LPVOID arg)
+{
+	struct spawn_bridge	*b = arg;
+	char			 buf[4096];
+	DWORD			 n;
+
+	while (ReadFile(b->out, buf, sizeof buf, &n, NULL) && n != 0) {
+		if (send(b->sock, buf, (int)n, 0) <= 0)
+			break;
+	}
+	CloseHandle(b->out);
+	shutdown(b->sock, SD_SEND);
+	spawn_bridge_release(b);
+	return (0);
+}
+
+/* Server input to the child (pipe-pane -O). */
+static DWORD WINAPI
+spawn_bridge_in(LPVOID arg)
+{
+	struct spawn_bridge	*b = arg;
+	char			 buf[4096];
+	DWORD			 written;
+	int			 n;
+
+	while ((n = recv(b->sock, buf, sizeof buf, 0)) > 0) {
+		if (!WriteFile(b->in, buf, (DWORD)n, &written, NULL))
+			break;
+	}
+	CloseHandle(b->in);
+	spawn_bridge_release(b);
+	return (0);
+}
+
+/*
+ * Spawn a non-PTY process with its stdin, stdout and stderr connected to the
+ * given socket. The socket then belongs to the bridge, which closes it when
+ * the child is done; the caller must not close it. Returns the child PID on
+ * success, -1 on failure (the caller still owns the socket).
  */
 pid_t
 win32_process_spawn(const char *cmd, const char *cwd, int outfd)
 {
-	STARTUPINFOA si;
+	STARTUPINFOEXA si;
 	PROCESS_INFORMATION pi;
-	HANDLE hOut;
 	SECURITY_ATTRIBUTES sa;
+	HANDLE outr = NULL, outw = NULL, inr = NULL, inw = NULL, threads[2];
+	HANDLE inherit[2];
+	struct spawn_bridge *b;
+	SIZE_T attrsize = 0;
 	char *cmddup;
+	BOOL ok;
 
 	memset(&sa, 0, sizeof sa);
 	sa.nLength = sizeof sa;
 	sa.bInheritHandle = TRUE;
 
-	/* Convert the socket to a handle that can be inherited. */
-	hOut = (HANDLE)_get_osfhandle(outfd);
-	if (hOut == INVALID_HANDLE_VALUE)
+	if (!CreatePipe(&outr, &outw, &sa, 0))
 		return (-1);
+	if (!CreatePipe(&inr, &inw, &sa, 0)) {
+		CloseHandle(outr);
+		CloseHandle(outw);
+		return (-1);
+	}
+	SetHandleInformation(outr, HANDLE_FLAG_INHERIT, 0);
+	SetHandleInformation(inw, HANDLE_FLAG_INHERIT, 0);
 
+	/* The child inherits its two pipe ends and nothing else of the server's. */
 	memset(&si, 0, sizeof si);
-	si.cb = sizeof si;
-	si.dwFlags = STARTF_USESTDHANDLES;
-	si.hStdInput = hOut;
-	si.hStdOutput = hOut;
-	si.hStdError = hOut;
+	si.StartupInfo.cb = sizeof si;
+	si.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+	si.StartupInfo.hStdInput = inr;
+	si.StartupInfo.hStdOutput = outw;
+	si.StartupInfo.hStdError = outw;
+	inherit[0] = inr;
+	inherit[1] = outw;
+	InitializeProcThreadAttributeList(NULL, 1, 0, &attrsize);
+	si.lpAttributeList = malloc(attrsize);
+	ok = si.lpAttributeList != NULL &&
+	    InitializeProcThreadAttributeList(si.lpAttributeList, 1, 0,
+	    &attrsize) &&
+	    UpdateProcThreadAttribute(si.lpAttributeList, 0,
+	    PROC_THREAD_ATTRIBUTE_HANDLE_LIST, inherit, sizeof inherit, NULL,
+	    NULL);
 
 	memset(&pi, 0, sizeof pi);
 	cmddup = _strdup(cmd);
-
-	if (!CreateProcessA(NULL, cmddup, NULL, NULL, TRUE,
-	    CREATE_NO_WINDOW, NULL,
-	    (cwd != NULL && *cwd != '\0') ? cwd : NULL,
-	    &si, &pi)) {
-		free(cmddup);
-		return (-1);
+	if (ok) {
+		ok = CreateProcessA(NULL, cmddup, NULL, NULL, TRUE,
+		    CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT, NULL,
+		    (cwd != NULL && *cwd != '\0') ? cwd : NULL,
+		    &si.StartupInfo, &pi);
 	}
 	free(cmddup);
-
+	if (si.lpAttributeList != NULL) {
+		DeleteProcThreadAttributeList(si.lpAttributeList);
+		free(si.lpAttributeList);
+	}
+	CloseHandle(outw);
+	CloseHandle(inr);
+	if (!ok) {
+		CloseHandle(outr);
+		CloseHandle(inw);
+		return (-1);
+	}
 	CloseHandle(pi.hThread);
+
+	b = calloc(1, sizeof *b);
+	b->out = outr;
+	b->in = inw;
+	b->sock = (SOCKET)outfd;
+	b->refs = 2;
+	threads[0] = CreateThread(NULL, 0, spawn_bridge_out, b, 0, NULL);
+	threads[1] = CreateThread(NULL, 0, spawn_bridge_in, b, 0, NULL);
+	CloseHandle(threads[0]);
+	CloseHandle(threads[1]);
 
 	/* Watch the process for exit. */
 	win32_process_watch(pi.hProcess, (pid_t)pi.dwProcessId);
@@ -218,9 +318,74 @@ win32_process_spawn(const char *cmd, const char *cwd, int outfd)
 }
 
 /*
+ * On a crash, write the faulting call stack to stderr, with function names
+ * and lines when the PDB is beside the exe (a RelWithDebInfo or Debug build).
+ * Without it the server died silently, with no debugger installed to say where.
+ */
+static LONG WINAPI
+win32_crash_handler(EXCEPTION_POINTERS *ep)
+{
+	HANDLE			 proc = GetCurrentProcess(), thread = GetCurrentThread();
+	CONTEXT			 ctx = *ep->ContextRecord;
+	STACKFRAME64		 frame;
+	char			 symbuf[sizeof(SYMBOL_INFO) + 256];
+	SYMBOL_INFO		*sym = (SYMBOL_INFO *)symbuf;
+	IMAGEHLP_LINE64		 line;
+	DWORD64			 disp64;
+	DWORD			 disp;
+	int			 i;
+
+	fprintf(stderr, "tmux crashed: exception 0x%08lx at %p\n",
+	    ep->ExceptionRecord->ExceptionCode,
+	    ep->ExceptionRecord->ExceptionAddress);
+	SymSetOptions(SYMOPT_LOAD_LINES | SYMOPT_UNDNAME);
+	SymInitialize(proc, NULL, TRUE);
+
+	memset(&frame, 0, sizeof frame);
+	frame.AddrPC.Offset = ctx.Rip;
+	frame.AddrPC.Mode = AddrModeFlat;
+	frame.AddrFrame.Offset = ctx.Rbp;
+	frame.AddrFrame.Mode = AddrModeFlat;
+	frame.AddrStack.Offset = ctx.Rsp;
+	frame.AddrStack.Mode = AddrModeFlat;
+	for (i = 0; i < 32; i++) {
+		if (!StackWalk64(IMAGE_FILE_MACHINE_AMD64, proc, thread, &frame,
+		    &ctx, NULL, SymFunctionTableAccess64, SymGetModuleBase64, NULL))
+			break;
+		memset(symbuf, 0, sizeof symbuf);
+		sym->SizeOfStruct = sizeof(SYMBOL_INFO);
+		sym->MaxNameLen = 255;
+		memset(&line, 0, sizeof line);
+		line.SizeOfStruct = sizeof line;
+		fprintf(stderr, "  #%d %s", i,
+		    SymFromAddr(proc, frame.AddrPC.Offset, &disp64, sym) ?
+		    sym->Name : "?");
+		if (SymGetLineFromAddr64(proc, frame.AddrPC.Offset, &disp, &line))
+			fprintf(stderr, " %s:%lu", line.FileName, line.LineNumber);
+		fprintf(stderr, "\n");
+	}
+	fflush(stderr);
+	return (EXCEPTION_CONTINUE_SEARCH);
+}
+
+void
+win32_crash_init(void)
+{
+	SetUnhandledExceptionFilter(win32_crash_handler);
+}
+
+/* Defined in cfg.c. */
+extern char **cfg_files;
+extern unsigned int cfg_nfiles;
+extern int cfg_quiet;
+
+/*
  * Launch a detached tmux server process.
- * Runs: tmux.exe -D -S "<label>"
+ * Runs: tmux.exe -D -S "<label>" [-f "<file>"]...
  * The -D flag tells tmux to run as a foreground server (no fork).
+ * On Unix the forked server inherits cfg_files; here they must be passed on
+ * the command line, or a client's -f files never reach the server. cfg_quiet
+ * is clear only when -f was given.
  */
 void
 win32_launch_server(const char *label)
@@ -228,13 +393,20 @@ win32_launch_server(const char *label)
 	STARTUPINFOA si;
 	PROCESS_INFORMATION pi;
 	char exe[MAX_PATH];
-	char cmdline[MAX_PATH * 2];
+	char cmdline[8192];
+	size_t len;
+	unsigned int i;
 
 	if (GetModuleFileNameA(NULL, exe, sizeof exe) == 0)
 		return;
 
-	snprintf(cmdline, sizeof cmdline,
+	len = snprintf(cmdline, sizeof cmdline,
 	    "\"%s\" -D -S \"%s\"", exe, label);
+	for (i = 0; !cfg_quiet && i < cfg_nfiles && len < sizeof cmdline; i++)
+		len += snprintf(cmdline + len, sizeof cmdline - len,
+		    " -f \"%s\"", cfg_files[i]);
+	if (len >= sizeof cmdline)
+		return;
 
 	memset(&si, 0, sizeof si);
 	si.cb = sizeof si;

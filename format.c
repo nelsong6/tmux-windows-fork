@@ -887,7 +887,11 @@ format_cb_current_command(struct format_tree *ft)
 	if (wp == NULL || wp->shell == NULL)
 		return (NULL);
 
+#ifdef _WIN32
+	cmd = win32_pane_command(wp->pid);
+#else
 	cmd = osdep_get_name(wp->fd, wp->tty);
+#endif
 	if (cmd == NULL || *cmd == '\0') {
 		free(cmd);
 		cmd = cmd_stringify_argv(wp->argc, wp->argv);
@@ -912,6 +916,21 @@ format_cb_current_path(struct format_tree *ft)
 		return (NULL);
 
 	cwd = osdep_get_cwd(wp->fd);
+#ifdef _WIN32
+	/*
+	 * No process cwd on Windows (see osdep-windows.c): use the folder the
+	 * pane reported with OSC 7, file://HOST/D:/x -> D:/x.
+	 */
+	if (cwd == NULL && wp->base.path != NULL) {
+		const char *p = wp->base.path;
+
+		if (strncmp(p, "file://", 7) == 0 &&
+		    (p = strchr(p + 7, '/')) != NULL)
+			p++;
+		if (*p != '\0')
+			return (xstrdup(p));
+	}
+#endif
 	if (cwd == NULL)
 		return (NULL);
 	return (xstrdup(cwd));

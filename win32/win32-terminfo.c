@@ -143,6 +143,9 @@ static const struct win32_terminfo_entry win32_terminfo[] = {
 	{ "kf11",  "\033[23~",             0, 0, 1 },
 	{ "kf12",  "\033[24~",             0, 0, 1 },
 
+	/* Mouse; tty_update_mode() enables mouse reporting only if this is set. */
+	{ "kmous", "\033[<",               0, 0, 1 },  /* key_mouse */
+
 	/* Bracketed paste. */
 	{ "Enbp",  "\033[?2004h",          0, 0, 1 },
 	{ "Dsbp",  "\033[?2004l",          0, 0, 1 },

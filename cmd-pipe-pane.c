@@ -140,12 +140,12 @@ cmd_pipe_pane_exec(struct cmd *self, struct cmdq_item *item)
 		child_pid = win32_process_spawn(cmd, NULL, pipe_fd[1]);
 		if (child_pid == -1) {
 			cmdq_error(item, "spawn error");
-			close(pipe_fd[0]);
-			close(pipe_fd[1]);
+			closesocket((SOCKET)pipe_fd[0]);
+			closesocket((SOCKET)pipe_fd[1]);
 			free(cmd);
 			return (CMD_RETURN_ERROR);
 		}
-		close(pipe_fd[1]);
+		/* pipe_fd[1] now belongs to the process's stdio bridge. */
 
 		wp->pipe_fd = pipe_fd[0];
 		memcpy(wpo, &wp->offset, sizeof *wpo);

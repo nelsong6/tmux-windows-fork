@@ -63,6 +63,34 @@ win32_flock(int fd, int operation)
 	return (0);
 }
 
+int
+win32_path_is_absolute(const char *path)
+{
+	if (path[0] == '/' || path[0] == '\\')
+		return (1);
+	return (isalpha((unsigned char)path[0]) && path[1] == ':' &&
+	    (path[2] == '/' || path[2] == '\\'));
+}
+
+/*
+ * cmd.exe takes /c before a command; pwsh, powershell and Unix-style shells
+ * take -c (pwsh rejects /c).
+ */
+const char *
+win32_shell_command_flag(const char *shell)
+{
+	const char	*name, *p;
+
+	name = shell;
+	for (p = shell; *p != '\0'; p++) {
+		if (*p == '\\' || *p == '/')
+			name = p + 1;
+	}
+	if (_stricmp(name, "cmd") == 0 || _stricmp(name, "cmd.exe") == 0)
+		return ("/c");
+	return ("-c");
+}
+
 /* closefrom: close all fds >= lowfd. */
 void
 win32_closefrom(int lowfd)

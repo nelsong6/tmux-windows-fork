@@ -634,6 +634,12 @@ int win32_clock_gettime(int clk_id, struct timespec *tp);
 #define clock_gettime(c, t) win32_clock_gettime(c, t)
 #define HAVE_CLOCK_GETTIME 1
 
+/* D:\x, D:/x, \\server\share and /x are absolute; tmux checked for '/'. */
+int win32_path_is_absolute(const char *path);
+
+/* The flag a shell takes before a command: /c for cmd.exe, -c otherwise. */
+const char *win32_shell_command_flag(const char *shell);
+
 /* closefrom. */
 void win32_closefrom(int lowfd);
 #define closefrom(fd) win32_closefrom(fd)
@@ -890,6 +896,7 @@ void  win32_process_init(void);
 void  win32_process_cleanup(void);
 pid_t win32_process_spawn(const char *cmd, const char *cwd, int outfd);
 void  win32_launch_server(const char *label);
+void  win32_crash_init(void);
 
 /* win32-ipc.c */
 int  win32_ipc_create_server(const char *label, uint16_t *port);

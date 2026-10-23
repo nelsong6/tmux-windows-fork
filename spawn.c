@@ -281,7 +281,11 @@ spawn_pane(struct spawn_context *sc, char **cause)
 	 */
 	if (sc->cwd != NULL) {
 		cwd = format_single(item, sc->cwd, c, target->s, NULL, NULL);
+#ifdef _WIN32
+		if (!win32_path_is_absolute(cwd)) {
+#else
 		if (*cwd != '/') {
+#endif
 			xasprintf(&new_cwd, "%s%s%s",
 			    server_client_get_cwd(c, target->s),
 			    *cwd != '\0' ? "/" : "", cwd);
@@ -432,8 +436,8 @@ spawn_pane(struct spawn_context *sc, char **cause)
 		const char		*shell = new_wp->shell;
 
 		if (new_wp->argc == 1) {
-			xasprintf(&cmdline, "\"%s\" /c %s", shell,
-			    new_wp->argv[0]);
+			xasprintf(&cmdline, "\"%s\" %s %s", shell,
+			    win32_shell_command_flag(shell), new_wp->argv[0]);
 		} else if (new_wp->argc > 1) {
 			int i;
 			size_t total = 0;
@@ -447,14 +451,37 @@ spawn_pane(struct spawn_context *sc, char **cause)
 				strlcat(cmdline, new_wp->argv[i], total + 1);
 			}
 		} else {
-			/* Login shell. */
-			xasprintf(&cmdline, "\"%s\"", shell);
+			/*
+			 * Login shell. pwsh and Windows PowerShell print a
+			 * version banner on start; a Unix shell starts quiet.
+			 */
+			const char *base = shell, *p;
+
+			for (p = shell; *p != '\0'; p++) {
+				if (*p == '\\' || *p == '/')
+					base = p + 1;
+			}
+			if (_stricmp(base, "pwsh.exe") == 0 ||
+			    _stricmp(base, "powershell.exe") == 0)
+				xasprintf(&cmdline, "\"%s\" -NoLogo", shell);
+			else
+				xasprintf(&cmdline, "\"%s\"", shell);
 		}
 
+		/* As on Unix, a folder that's gone starts in home instead. */
+		{
+			const char	*dir = new_wp->cwd ? new_wp->cwd : ".";
+			DWORD		 attr = GetFileAttributesA(dir);
+
+			if ((attr == INVALID_FILE_ATTRIBUTES ||
+			    (~attr & FILE_ATTRIBUTE_DIRECTORY)) &&
+			    find_home() != NULL)
+				dir = find_home();
+			environ_set(child, "PWD", 0, "%s", dir);
+			actual_cwd = dir;
+		}
 		envblock = environ_to_win32_block(child);
-		pty = win32_pty_spawn(cmdline,
-		    new_wp->cwd ? new_wp->cwd : ".",
-		    envblock,
+		pty = win32_pty_spawn(cmdline, actual_cwd, envblock,
 		    (int)ws.ws_col, (int)ws.ws_row,
 		    &new_wp->pid);
 		free(envblock);

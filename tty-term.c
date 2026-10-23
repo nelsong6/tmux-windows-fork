@@ -837,6 +837,14 @@ tty_term_string(struct tty_term *term, enum tty_code_code code)
 	return (term->codes[code].value.string);
 }
 
+/*
+ * tparm reads pointer-sized arguments. Hls passes strings through it, and
+ * Windows' long is 32 bits, so the (long) casts cut the pointers in half.
+ */
+#define TTY_TERM_TPARM(x, a, b, c) tparm((char *)(x), (intptr_t)(a), \
+    (intptr_t)(b), (intptr_t)(c), (intptr_t)0, (intptr_t)0, (intptr_t)0, \
+    (intptr_t)0, (intptr_t)0, (intptr_t)0)
+
 const char *
 tty_term_string_i(struct tty_term *term, enum tty_code_code code, int a)
 {
@@ -847,7 +855,7 @@ tty_term_string_i(struct tty_term *term, enum tty_code_code code, int a)
 #elif defined(HAVE_TIPARM)
 	s = tiparm(x, a);
 #else
-	s = tparm((char *)x, a, 0, 0, 0, 0, 0, 0, 0, 0);
+	s = TTY_TERM_TPARM(x, a, 0, 0);
 #endif
 	if (s == NULL) {
 		log_debug("could not expand %s", tty_term_codes[code].name);
@@ -866,7 +874,7 @@ tty_term_string_ii(struct tty_term *term, enum tty_code_code code, int a, int b)
 #elif defined(HAVE_TIPARM)
 	s = tiparm(x, a, b);
 #else
-	s = tparm((char *)x, a, b, 0, 0, 0, 0, 0, 0, 0);
+	s = TTY_TERM_TPARM(x, a, b, 0);
 #endif
 	if (s == NULL) {
 		log_debug("could not expand %s", tty_term_codes[code].name);
@@ -886,7 +894,7 @@ tty_term_string_iii(struct tty_term *term, enum tty_code_code code, int a,
 #elif defined(HAVE_TIPARM)
 	s = tiparm(x, a, b, c);
 #else
-	s = tparm((char *)x, a, b, c, 0, 0, 0, 0, 0, 0);
+	s = TTY_TERM_TPARM(x, a, b, c);
 #endif
 	if (s == NULL) {
 		log_debug("could not expand %s", tty_term_codes[code].name);
@@ -905,7 +913,7 @@ tty_term_string_s(struct tty_term *term, enum tty_code_code code, const char *a)
 #elif defined(HAVE_TIPARM)
 	s = tiparm(x, a);
 #else
-	s = tparm((char *)x, (long)a, 0, 0, 0, 0, 0, 0, 0, 0);
+	s = TTY_TERM_TPARM(x, a, 0, 0);
 #endif
 	if (s == NULL) {
 		log_debug("could not expand %s", tty_term_codes[code].name);
@@ -925,7 +933,7 @@ tty_term_string_ss(struct tty_term *term, enum tty_code_code code,
 #elif defined(HAVE_TIPARM)
 	s = tiparm(x, a, b);
 #else
-	s = tparm((char *)x, (long)a, (long)b, 0, 0, 0, 0, 0, 0, 0);
+	s = TTY_TERM_TPARM(x, a, b, 0);
 #endif
 	if (s == NULL) {
 		log_debug("could not expand %s", tty_term_codes[code].name);

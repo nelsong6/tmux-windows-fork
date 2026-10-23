@@ -40,7 +40,15 @@ RB_GENERATE_STATIC(environ, environ_entry, entry, environ_cmp);
 static int
 environ_cmp(struct environ_entry *envent1, struct environ_entry *envent2)
 {
+#ifdef _WIN32
+	/*
+	 * Windows variable names ignore case: the system's "Path" is the PATH
+	 * tmux looks for, and a separate "PATH" left panes with an empty one.
+	 */
+	return (_stricmp(envent1->name, envent2->name));
+#else
 	return (strcmp(envent1->name, envent2->name));
+#endif
 }
 
 /* Initialise the environment. */

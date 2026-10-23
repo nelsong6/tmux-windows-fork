@@ -73,6 +73,17 @@ struct job {
 /* All jobs list. */
 static LIST_HEAD(joblist, job) all_jobs = LIST_HEAD_INITIALIZER(all_jobs);
 
+/* Close a job's fd. On Windows it is a socket, and the CRT's close aborts. */
+static void
+job_close_fd(int fd)
+{
+#ifdef _WIN32
+	closesocket((SOCKET)fd);
+#else
+	close(fd);
+#endif
+}
+
 /* Start a job running. */
 struct job *
 job_run(const char *cmd, int argc, char **argv, struct environ *e,
@@ -133,10 +144,11 @@ job_run(const char *cmd, int argc, char **argv, struct environ *e,
 	/* Windows: use ConPTY for PTY jobs, pipes + CreateProcess otherwise. */
 	if (flags & JOB_PTY) {
 		if (cmd != NULL)
-			xasprintf(&cmdline, "%s /c %s", shell, cmd);
+			xasprintf(&cmdline, "\"%s\" %s %s", shell,
+			    win32_shell_command_flag(shell), cmd);
 		else
 			cmdline = cmd_stringify_argv(argc, argv);
-		pty = win32_pty_spawn(cmdline, cwd, NULL, sx, sy, &pid);
+		pty =win32_pty_spawn(cmdline, cwd, NULL, sx, sy, &pid);
 		free(cmdline);
 		if (pty == NULL)
 			goto fail;
@@ -144,14 +156,15 @@ job_run(const char *cmd, int argc, char **argv, struct environ *e,
 		if (socketpair(AF_UNIX, SOCK_STREAM, PF_UNSPEC, out) != 0)
 			goto fail;
 		if (cmd != NULL)
-			xasprintf(&cmdline, "%s /c %s", shell, cmd);
+			xasprintf(&cmdline, "\"%s\" %s %s", shell,
+			    win32_shell_command_flag(shell), cmd);
 		else
 			cmdline = cmd_stringify_argv(argc, argv);
 		pid = win32_process_spawn(cmdline, cwd, out[1]);
 		free(cmdline);
 		if (pid == -1) {
-			close(out[0]);
-			close(out[1]);
+			closesocket((SOCKET)out[0]);
+			closesocket((SOCKET)out[1]);
 			goto fail;
 		}
 	}
@@ -177,12 +190,11 @@ job_run(const char *cmd, int argc, char **argv, struct environ *e,
 	job->freecb = freecb;
 	job->data = data;
 
+	/* out[1] now belongs to the process's stdio bridge. */
 	if (flags & JOB_PTY)
 		job->fd = win32_pty_get_fd(pty);
-	else {
-		close(out[1]);
+	else
 		job->fd = out[0];
-	}
 	setblocking(job->fd, 0);
 #else
 	sigfillset(&set);
@@ -355,7 +367,7 @@ job_free(struct job *job)
 	if (job->event != NULL)
 		bufferevent_free(job->event);
 	if (job->fd != -1)
-		close(job->fd);
+		job_close_fd(job->fd);
 
 	free(job);
 }
