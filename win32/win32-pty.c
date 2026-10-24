@@ -25,6 +25,48 @@ struct win32_pty {
 	volatile int closing;
 };
 
+/*
+ * The pseudoconsole implementation. Windows' built-in one (kernel32, served by
+ * the inbox conhost.exe) lags Windows Terminal's by a release or more, and
+ * Claude Code's redraws came out garbled through it. conpty.dll with
+ * OpenConsole.exe beside tmux.exe (Microsoft.Windows.Console.ConPTY, the build
+ * Windows Terminal ships) is used when present.
+ */
+struct pty_api {
+	HRESULT	(WINAPI *create)(COORD, HANDLE, HANDLE, DWORD, HPCON *);
+	HRESULT	(WINAPI *resize)(HPCON, COORD);
+	void	(WINAPI *destroy)(HPCON);
+};
+
+static const struct pty_api *
+pty_api(void)
+{
+	static struct pty_api	 api;
+	static int		 loaded;
+	wchar_t			 path[MAX_PATH], *slash;
+	HMODULE			 m;
+
+	if (loaded)
+		return (&api);
+	loaded = 1;
+
+	if (GetModuleFileNameW(NULL, path, MAX_PATH) != 0 &&
+	    (slash = wcsrchr(path, L'\\')) != NULL &&
+	    wcscpy_s(slash + 1, MAX_PATH - (slash + 1 - path), L"conpty.dll") == 0 &&
+	    (m = LoadLibraryExW(path, NULL, LOAD_WITH_ALTERED_SEARCH_PATH)) != NULL) {
+		api.create = (void *)GetProcAddress(m, "ConptyCreatePseudoConsole");
+		api.resize = (void *)GetProcAddress(m, "ConptyResizePseudoConsole");
+		api.destroy = (void *)GetProcAddress(m, "ConptyClosePseudoConsole");
+		if (api.create != NULL && api.resize != NULL && api.destroy != NULL)
+			return (&api);
+		FreeLibrary(m);
+	}
+	api.create = CreatePseudoConsole;
+	api.resize = ResizePseudoConsole;
+	api.destroy = ClosePseudoConsole;
+	return (&api);
+}
+
 /* Output bridge: reads from ConPTY pipe, sends to socket (child -> server). */
 static DWORD WINAPI
 pty_bridge_thread(LPVOID arg)
@@ -100,7 +142,7 @@ win32_pty_spawn(const char *cmd, const char *cwd, char *env,
 	/* Create pseudo console. */
 	size.X = (SHORT)cols;
 	size.Y = (SHORT)rows;
-	hr = CreatePseudoConsole(size, pipeIn_read, pipeOut_write, 0, &pty->hPC);
+	hr = pty_api()->create(size, pipeIn_read, pipeOut_write, 0, &pty->hPC);
 	if (FAILED(hr))
 		goto fail;
 
@@ -190,7 +232,7 @@ fail:
 	if (pipeIn_write) CloseHandle(pipeIn_write);
 	if (pipeOut_read) CloseHandle(pipeOut_read);
 	if (pipeOut_write) CloseHandle(pipeOut_write);
-	if (pty->hPC) ClosePseudoConsole(pty->hPC);
+	if (pty->hPC) pty_api()->destroy(pty->hPC);
 	if (pty->hProcess) CloseHandle(pty->hProcess);
 	if (pty->hThread) CloseHandle(pty->hThread);
 	if (pty->sock != INVALID_SOCKET) closesocket(pty->sock);
@@ -210,7 +252,7 @@ win32_pty_resize(struct win32_pty *pty, int cols, int rows)
 
 	size.X = (SHORT)cols;
 	size.Y = (SHORT)rows;
-	hr = ResizePseudoConsole(pty->hPC, size);
+	hr = pty_api()->resize(pty->hPC, size);
 	return SUCCEEDED(hr) ? 0 : -1;
 }
 
@@ -223,7 +265,7 @@ win32_pty_close(struct win32_pty *pty)
 	pty->closing = 1;
 
 	if (pty->hPC != NULL)
-		ClosePseudoConsole(pty->hPC);
+		pty_api()->destroy(pty->hPC);
 	if (pty->hPipeIn != NULL)
 		CloseHandle(pty->hPipeIn);
 	if (pty->hPipeOut != NULL)
