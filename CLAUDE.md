@@ -101,4 +101,5 @@ Do **not** add a trailing blank line to manifest YAML files. Earlier versions (3
 
 ## Known Quirks
 
-- `source -n` hangs as a separate client on Windows (file-read protocol blocks)
+- `source -n` hangs as a separate client on Windows (file-read protocol blocks); plain `source-file` from a second client against a live server hung too (2026-10-24)
+- Command-line arguments arrive in the ANSI code page (no `wmain`/UTF-8 manifest), so non-ASCII in argv is mangled: `display -p '#{s/✳/*/:pane_title}'` inserted `*` between every byte. Put non-ASCII formats in a config file
