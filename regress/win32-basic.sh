@@ -89,5 +89,19 @@ COUNT=$($TMUX list-panes -tshell | wc -l)
 [ "$COUNT" -eq 1 ] || exit 1
 $TMUX kill-server 2>/dev/null
 rm -f "$CFG"
+wait_gone
+
+# 9. respawn-pane -k replaces a running pane's process and keeps the server
+# (it used to leave the old ConPTY running and take the server down)
+$TMUX $FNULL new -d -srespawn < /dev/null || exit 1
+wait_ready respawn || exit 1
+OLD=$($TMUX display -p -trespawn '#{pane_pid}' | tr -d '\r')
+$TMUX respawn-pane -k -trespawn || exit 1
+wait_until pane_ready respawn || exit 1
+NEW=$($TMUX display -p -trespawn '#{pane_pid}' | tr -d '\r')
+[ -n "$NEW" ] && [ "$NEW" != "$OLD" ] || exit 1
+$TMUX send-keys -trespawn "echo RESPAWN_OK" Enter
+wait_for respawn "^RESPAWN_OK" || exit 1
+$TMUX kill-server 2>/dev/null
 
 exit 0
