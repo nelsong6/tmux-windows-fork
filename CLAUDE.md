@@ -109,3 +109,5 @@ Do **not** add a trailing blank line to manifest YAML files. Earlier versions (3
 
 - `source -n` hangs as a separate client on Windows (file-read protocol blocks); plain `source-file` from a second client against a live server hung too (2026-10-24)
 - Command-line arguments arrive in the ANSI code page (no `wmain`/UTF-8 manifest), so non-ASCII in argv is mangled: `display -p '#{s/✳/*/:pane_title}'` inserted `*` between every byte. Put non-ASCII formats in a config file
+- `default-shell` with forward slashes (`C:/WINDOWS/system32/cmd.exe`) leaves the first pane dead and the server exits; use backslashes
+- A server started from Git Bash passes ignoring Ctrl-C on to its panes (issue 6), so the tests can't exercise Ctrl-C
