@@ -885,6 +885,7 @@ struct win32_pty;
 struct win32_pty *win32_pty_spawn(const char *cmd, const char *cwd,
     char *env, int cols, int rows, pid_t *pid);
 int  win32_pty_resize(struct win32_pty *pty, int cols, int rows);
+void win32_pty_hangup(struct win32_pty *pty);
 void win32_pty_close(struct win32_pty *pty);
 int  win32_pty_get_fd(struct win32_pty *pty);
 HANDLE win32_pty_get_process(struct win32_pty *pty);

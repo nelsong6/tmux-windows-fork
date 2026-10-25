@@ -256,6 +256,20 @@ win32_pty_resize(struct win32_pty *pty, int cols, int rows)
 	return SUCCEEDED(hr) ? 0 : -1;
 }
 
+/*
+ * Close the pseudo console once its process has exited. Until then the output
+ * pipe stays open and the bridge never sees EOF; closing it flushes what is
+ * left and ends the pipe, and the bridge closes the socket.
+ */
+void
+win32_pty_hangup(struct win32_pty *pty)
+{
+	if (pty == NULL || pty->hPC == NULL)
+		return;
+	pty_api()->destroy(pty->hPC);
+	pty->hPC = NULL;
+}
+
 void
 win32_pty_close(struct win32_pty *pty)
 {

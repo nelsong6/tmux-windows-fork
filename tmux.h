@@ -3738,6 +3738,9 @@ void		 style_set_scrollbar_style_from_option(struct style *,
 /* spawn.c */
 struct winlink	*spawn_window(struct spawn_context *, char **);
 struct window_pane *spawn_pane(struct spawn_context *, char **);
+#ifdef _WIN32
+char		*environ_to_win32_block(struct environ *);
+#endif
 
 /* regsub.c */
 char		*regsub(const char *, const char *, const char *, int);

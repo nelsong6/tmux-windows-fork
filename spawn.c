@@ -37,7 +37,7 @@
  * Returns an allocated block suitable for CreateProcessW with
  * CREATE_UNICODE_ENVIRONMENT, or NULL on failure. Caller must free().
  */
-static char *
+char *
 environ_to_win32_block(struct environ *env)
 {
 	struct environ_entry	*ee;
