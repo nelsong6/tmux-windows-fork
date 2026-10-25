@@ -312,7 +312,20 @@ spawn_pane(struct spawn_context *sc, char **cause)
 		}
 		if (sc->wp0->fd != -1) {
 			bufferevent_free(sc->wp0->event);
+#ifdef _WIN32
+			/*
+			 * The fd is the ConPTY's; closing it alone leaves the
+			 * pseudo console, its bridge threads and the old
+			 * process running.
+			 */
+			if (sc->wp0->win32_pty != NULL) {
+				win32_pty_close(
+				    (struct win32_pty *)sc->wp0->win32_pty);
+				sc->wp0->win32_pty = NULL;
+			} else
+#endif
 			close(sc->wp0->fd);
+			sc->wp0->fd = -1;
 		}
 		window_pane_reset_mode_all(sc->wp0);
 		screen_reinit(&sc->wp0->base);
