@@ -61,6 +61,9 @@ struct job {
 
 	int			 fd;
 	struct bufferevent	*event;
+#ifdef _WIN32
+	struct win32_pty	*pty;
+#endif
 
 	job_update_cb		 updatecb;
 	job_complete_cb		 completecb;
@@ -97,7 +100,7 @@ job_run(const char *cmd, int argc, char **argv, struct environ *e,
 #ifdef _WIN32
 	int		  out[2];
 	const char	 *shell;
-	char		 *cmdline, *argv0;
+	char		 *cmdline, *argv0, *envblock;
 	struct options	 *oo;
 	struct win32_pty *pty = NULL;
 #else
@@ -148,7 +151,9 @@ job_run(const char *cmd, int argc, char **argv, struct environ *e,
 			    win32_shell_command_flag(shell), cmd);
 		else
 			cmdline = cmd_stringify_argv(argc, argv);
-		pty =win32_pty_spawn(cmdline, cwd, NULL, sx, sy, &pid);
+		envblock = environ_to_win32_block(env);
+		pty = win32_pty_spawn(cmdline, cwd, envblock, sx, sy, &pid);
+		free(envblock);
 		free(cmdline);
 		if (pty == NULL)
 			goto fail;
@@ -191,9 +196,11 @@ job_run(const char *cmd, int argc, char **argv, struct environ *e,
 	job->data = data;
 
 	/* out[1] now belongs to the process's stdio bridge. */
-	if (flags & JOB_PTY)
+	if (flags & JOB_PTY) {
+		job->pty = pty;
 		job->fd = win32_pty_get_fd(pty);
-	else
+		win32_process_watch(win32_pty_get_process(pty), pid);
+	} else
 		job->fd = out[0];
 	setblocking(job->fd, 0);
 #else
@@ -366,6 +373,11 @@ job_free(struct job *job)
 		kill(job->pid, SIGTERM);
 	if (job->event != NULL)
 		bufferevent_free(job->event);
+#ifdef _WIN32
+	if (job->pty != NULL)
+		win32_pty_close(job->pty);
+	else
+#endif
 	if (job->fd != -1)
 		job_close_fd(job->fd);
 
@@ -386,12 +398,7 @@ job_resize(struct job *job, u_int sx, u_int sy)
 	log_debug("resize job %p: %ux%u", job, sx, sy);
 
 #ifdef _WIN32
-	/*
-	 * On Windows, PTY resize is handled via ConPTY at the window pane
-	 * level (window.c calls win32_pty_resize). Job-level PTY resize
-	 * is not yet implemented.
-	 */
-	log_debug("job_resize: not implemented on Windows");
+	win32_pty_resize(job->pty, sx, sy);
 #else
 	memset(&ws, 0, sizeof ws);
 	ws.ws_col = sx;
@@ -471,6 +478,9 @@ job_check_died(pid_t pid, int status)
 	log_debug("job died %p: %s, pid %ld", job, job->cmd, (long) job->pid);
 
 	job->status = status;
+#ifdef _WIN32
+	win32_pty_hangup(job->pty);
+#endif
 
 	if (job->state == JOB_CLOSED) {
 		if (job->completecb != NULL)
