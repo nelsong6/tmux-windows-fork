@@ -8,8 +8,9 @@ TERM=screen
 
 [ -z "$TEST_TMUX" ] && TEST_TMUX=$(readlink -f ../tmux)
 TMUX="$TEST_TMUX -Ltest"
+. "$(dirname "$0")/win32-wait.sh"
 $TMUX kill-server 2>/dev/null
-sleep 1
+wait_gone
 
 FNULL="-fNUL"
 trap "$TMUX kill-server 2>/dev/null" 0 1 15
@@ -19,14 +20,12 @@ $TMUX $FNULL has -tfoo </dev/null 2>/dev/null && exit 1
 
 # start server, has-session for non-existent session should fail
 $TMUX $FNULL new -d </dev/null || exit 1
-sleep 1
 $TMUX has -tfoo 2>/dev/null && exit 1
 
 # create named session, has-session should succeed
 $TMUX kill-server 2>/dev/null
-sleep 1
+wait_gone
 $TMUX $FNULL new -dsfoo </dev/null || exit 1
-sleep 1
 $TMUX has -tfoo </dev/null 2>/dev/null || exit 1
 
 $TMUX kill-server 2>/dev/null

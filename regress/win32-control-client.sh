@@ -11,8 +11,9 @@ TERM=screen
 
 [ -z "$TEST_TMUX" ] && TEST_TMUX=$(readlink -f ../tmux)
 TMUX="$TEST_TMUX -Lctrltest"
+. "$(dirname "$0")/win32-wait.sh"
 $TMUX kill-server 2>/dev/null
-sleep 2
+wait_gone
 
 FNULL="-fNUL"
 OUT=$(mktemp)
@@ -25,18 +26,13 @@ fail() {
 }
 
 $TMUX $FNULL new -d -sctrl -x 200 -y 200 < /dev/null || exit 1
-sleep 1
 
 # --- Test 1: Complex pane operations (equivalent to control-client-sanity) ---
 $TMUX splitw -tctrl || { fail "splitw"; exit 1; }
-sleep 0.5
 $TMUX selectp -tctrl -t0 || { fail "selectp 0"; exit 1; }
 $TMUX splitw -tctrl || { fail "splitw 2"; exit 1; }
-sleep 0.5
 $TMUX neww -tctrl || { fail "neww"; exit 1; }
-sleep 0.5
 $TMUX splitw -tctrl || { fail "splitw 3"; exit 1; }
-sleep 0.5
 echo "PASS 1: pane operations"
 
 # --- Test 2: Kill pane ---
@@ -45,7 +41,6 @@ $TMUX lsp -tctrl -F '#{pane_id}' | tr -d '\r' >$OUT
 BEFORE=$(wc -l < $OUT)
 KILL_PANE=$(tail -1 $OUT)
 $TMUX killp -tctrl -t"$KILL_PANE" || { fail "killp"; exit 1; }
-sleep 0.5
 AFTER=$($TMUX lsp -tctrl | wc -l)
 [ "$AFTER" -eq $((BEFORE - 1)) ] || fail "killp: $BEFORE -> $AFTER (expected $((BEFORE - 1)))"
 echo "PASS 2: kill pane ($BEFORE -> $AFTER)"
@@ -54,22 +49,17 @@ echo "PASS 2: kill pane ($BEFORE -> $AFTER)"
 $TMUX lsp -tctrl -F '#{pane_id}' | tr -d '\r' >$OUT
 P1=$(sed -n '1p' $OUT)
 $TMUX splitw -tctrl || exit 1
-sleep 0.5
 $TMUX lsp -tctrl -F '#{pane_id}' | tr -d '\r' >$OUT
 P2=$(tail -1 $OUT)
 $TMUX swapp -s "$P1" -t "$P2" || { fail "swapp"; exit 1; }
-sleep 0.5
 echo "PASS 3: swap panes"
 
 # --- Test 4: Select layout tiled ---
 $TMUX neww -tctrl || exit 1
-sleep 0.5
 $TMUX splitw -tctrl || exit 1
 $TMUX splitw -tctrl || exit 1
 $TMUX splitw -tctrl || exit 1
-sleep 0.5
 $TMUX selectl -tctrl tiled || { fail "selectl tiled"; exit 1; }
-sleep 0.5
 COUNT=$($TMUX lsp -tctrl | wc -l)
 [ "$COUNT" -eq 4 ] || fail "tiled: expected 4 panes, got $COUNT"
 echo "PASS 4: select-layout tiled ($COUNT panes)"
@@ -77,7 +67,6 @@ echo "PASS 4: select-layout tiled ($COUNT panes)"
 # --- Test 5: Kill window ---
 WCOUNT_BEFORE=$($TMUX lsw -tctrl | wc -l)
 $TMUX killw -tctrl || { fail "killw"; exit 1; }
-sleep 0.5
 WCOUNT_AFTER=$($TMUX lsw -tctrl | wc -l)
 [ "$WCOUNT_AFTER" -eq $((WCOUNT_BEFORE - 1)) ] || \
 	fail "killw: $WCOUNT_BEFORE -> $WCOUNT_AFTER"

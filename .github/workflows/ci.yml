@@ -13,6 +13,9 @@ jobs:
     env:
       VCPKG_DEFAULT_TRIPLET: x64-windows-static
       VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/vcpkg-cache
+      # tmux.exe loads conpty.dll and OpenConsole.exe from its own folder
+      # (the pseudoconsole Windows Terminal ships); the package carries them.
+      CONPTY_VERSION: 1.25.260930003
 
     steps:
       - uses: actions/checkout@v4
@@ -64,14 +67,12 @@ jobs:
         shell: bash
         run: |
           taskkill //F //IM tmux.exe 2>/dev/null || true
-          sleep 2
           TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-format-strings.sh
 
       - name: Run config syntax tests
         shell: bash
         run: |
           taskkill //F //IM tmux.exe 2>/dev/null || true
-          sleep 2
           TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-conf-syntax.sh
 
       - name: Run key handling tests
@@ -79,28 +80,24 @@ jobs:
         timeout-minutes: 5
         run: |
           taskkill //F //IM tmux.exe 2>/dev/null || true
-          sleep 2
           TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-keys.sh
 
       - name: Run has-session tests
         shell: bash
         run: |
           taskkill //F //IM tmux.exe 2>/dev/null || true
-          sleep 2
           TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-has-session.sh
 
       - name: Run layout tests
         shell: bash
         run: |
           taskkill //F //IM tmux.exe 2>/dev/null || true
-          sleep 2
           TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-layout.sh
 
       - name: Run control client tests
         shell: bash
         run: |
           taskkill //F //IM tmux.exe 2>/dev/null || true
-          sleep 2
           TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-control-client.sh
 
       - name: Upload build artifacts
@@ -110,6 +107,20 @@ jobs:
           name: tmux-windows-debug
           path: |
             build/Debug/tmux.exe
+
+      - name: Package Release with ConPTY
+        shell: pwsh
+        run: |
+          Invoke-WebRequest "https://www.nuget.org/api/v2/package/Microsoft.Windows.Console.ConPTY/$env:CONPTY_VERSION" -OutFile conpty.zip
+          Expand-Archive conpty.zip conpty
+          New-Item -ItemType Directory package | Out-Null
+          Copy-Item build/Release/tmux.exe, conpty/runtimes/win-x64/native/conpty.dll, conpty/build/native/runtimes/x64/OpenConsole.exe package/
+
+      - name: Upload Release package
+        uses: actions/upload-artifact@v4
+        with:
+          name: tmux-windows
+          path: package/
 
   release:
     needs: build-and-test

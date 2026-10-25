@@ -47,6 +47,12 @@ CI runs 8 test scripts from `regress/`:
 - `win32-layout.sh` — pane dimension verification (7 tests)
 - `win32-control-client.sh` — complex pane operations (6 tests)
 
+They wait with `regress/win32-wait.sh` (poll until a condition holds, fail after 10 s), not fixed sleeps. Match a command's output with `^`: the typed command line holds the same text.
+
+## Publishing
+
+`publish.ps1` waits for the commit's CI run, downloads its `tmux-windows` package (Release `tmux.exe` with `conpty.dll` and `OpenConsole.exe`) and publishes it as `tmux` to `\\NelsonNAS\tools`. Run it after every merge.
+
 ## Winget Package Submission
 
 Package: `arndawg.tmux-windows` in `microsoft/winget-pkgs`.

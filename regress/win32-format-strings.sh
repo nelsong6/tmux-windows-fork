@@ -10,8 +10,9 @@ TERM=screen
 
 [ -z "$TEST_TMUX" ] && TEST_TMUX=$(readlink -f ../tmux)
 TMUX="$TEST_TMUX -Ltest"
+. "$(dirname "$0")/win32-wait.sh"
 $TMUX kill-server 2>/dev/null
-sleep 1
+wait_gone
 
 FNULL="-fNUL"
 
@@ -61,7 +62,6 @@ test_conditional_with_session_name()
 trap "$TMUX kill-server 2>/dev/null" 0 1 15
 
 $TMUX $FNULL new-session -d || exit 1
-sleep 1
 
 # used later in conditionals
 $TMUX rename-session "Summer" || exit 1
