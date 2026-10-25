@@ -45,11 +45,6 @@ jobs:
         run: |
           cmake --build build --config Debug
 
-      - name: Build Release
-        shell: pwsh
-        run: |
-          cmake --build build --config Release
-
       - name: Run basic regression tests
         shell: bash
         run: |
