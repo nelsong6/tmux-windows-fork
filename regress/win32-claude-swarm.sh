@@ -14,8 +14,9 @@ TERM=screen
 
 [ -z "$TEST_TMUX" ] && TEST_TMUX=$(readlink -f ../tmux)
 TMUX="$TEST_TMUX -Lswarm"
+. "$(dirname "$0")/win32-wait.sh"
 $TMUX kill-server 2>/dev/null
-sleep 1
+wait_gone
 
 OUT=$(mktemp)
 trap "rm -f $OUT; $TMUX kill-server 2>/dev/null" 0 1 15
@@ -57,14 +58,15 @@ while [ $CYCLE -lt $CYCLES ]; do
 	$TMUX $FNULL new-session -d -s swarm -x 120 -y 40 < /dev/null || {
 		fail "cycle $CYCLE: new-session failed"; exit 1
 	}
-	sleep 1
 
 	# --- Test 4: Rapid multi-split (1 horizontal + 2 vertical) ---
 	# Claude Code splits once per teammate. Typical team = 3-5 teammates.
 	$TMUX split-window -h -t swarm || { fail "cycle $CYCLE: split-window -h failed"; exit 1; }
 	$TMUX split-window -v -t swarm || { fail "cycle $CYCLE: split-window -v (1) failed"; exit 1; }
 	$TMUX split-window -v -t swarm:0.0 || { fail "cycle $CYCLE: split-window -v (2) failed"; exit 1; }
-	sleep 2
+	for PANE in 0 1 2 3; do
+		wait_ready "swarm:0.$PANE" || { fail "cycle $CYCLE: pane $PANE never drew a prompt"; exit 1; }
+	done
 
 	# Verify 4 panes exist.
 	COUNT=$($TMUX list-panes -t swarm | wc -l)
@@ -80,13 +82,13 @@ while [ $CYCLE -lt $CYCLES ]; do
 		}
 		PANE=$((PANE + 1))
 	done
-	sleep 3
 
 	# --- Test 6: Capture-pane round-trip for each pane ---
 	PANE=0
 	while [ $PANE -lt 4 ]; do
-		$TMUX capture-pane -t "swarm:0.$PANE" -p | tr -d '\r' >$OUT
-		grep -q "SWARM_PANE_${PANE}_OK" $OUT || {
+		# Unanchored: a pane the later splits resized can lose the first
+		# typed character (issue 4), so this also matches the typed line.
+		wait_for "swarm:0.$PANE" "SWARM_PANE_${PANE}_OK" || {
 			fail "cycle $CYCLE: capture-pane $PANE missing expected output"
 			echo "  pane $PANE content:"
 			$TMUX capture-pane -t "swarm:0.$PANE" -p | tr -d '\r' | head -5
@@ -106,7 +108,6 @@ while [ $CYCLE -lt $CYCLES ]; do
 
 	# --- Test 8: Rapid teardown while panes are active ---
 	$TMUX kill-session -t swarm || { fail "cycle $CYCLE: kill-session failed"; exit 1; }
-	sleep 1
 
 	# Verify session is gone.
 	$TMUX has-session -t swarm 2>/dev/null
@@ -117,7 +118,7 @@ while [ $CYCLE -lt $CYCLES ]; do
 	echo "  PASS 8.$CYCLE: session torn down cleanly"
 
 	$TMUX kill-server 2>/dev/null
-	sleep 2
+	wait_gone
 done
 
 # --- Test 9: Multi-session (simulates multiple teams) ---
@@ -125,11 +126,9 @@ done
 echo "--- Multi-session test ---"
 $TMUX $FNULL new-session -d -s team-a -x 100 -y 30 < /dev/null || { fail "new-session team-a"; exit 1; }
 $TMUX $FNULL new-session -d -s team-b -x 100 -y 30 < /dev/null || { fail "new-session team-b"; exit 1; }
-sleep 1
 
 $TMUX split-window -h -t team-a || { fail "split team-a"; exit 1; }
 $TMUX split-window -h -t team-b || { fail "split team-b"; exit 1; }
-sleep 1
 
 # Verify both sessions have 2 panes each.
 CA=$($TMUX list-panes -t team-a | wc -l)
@@ -137,16 +136,17 @@ CB=$($TMUX list-panes -t team-b | wc -l)
 [ "$CA" -eq 2 ] && [ "$CB" -eq 2 ] || { fail "multi-session: team-a=$CA team-b=$CB panes"; exit 1; }
 
 # Cross-session send-keys + capture.
+wait_ready team-a:0.0 && wait_ready team-b:0.0 || { fail "team shells never drew a prompt"; exit 1; }
 $TMUX send-keys -t team-a:0.0 "echo TEAM_A" Enter
 $TMUX send-keys -t team-b:0.0 "echo TEAM_B" Enter
-sleep 2
-$TMUX capture-pane -t team-a:0.0 -p | tr -d '\r' | grep -q "TEAM_A" || { fail "capture team-a"; exit 1; }
-$TMUX capture-pane -t team-b:0.0 -p | tr -d '\r' | grep -q "TEAM_B" || { fail "capture team-b"; exit 1; }
+# Unanchored, as in test 6: the split resized these panes (issue 4).
+wait_for team-a:0.0 "TEAM_A" || { fail "capture team-a"; exit 1; }
+wait_for team-b:0.0 "TEAM_B" || { fail "capture team-b"; exit 1; }
 
 $TMUX kill-session -t team-a
 $TMUX kill-session -t team-b
 $TMUX kill-server 2>/dev/null
-sleep 1
+wait_gone
 echo "PASS 9: multi-session OK"
 
 # --- Test 10: Rapid create-destroy cycle (handle leak detection) ---
@@ -165,7 +165,7 @@ while [ $RAPID -lt 5 ]; do
 	RAPID=$((RAPID + 1))
 done
 $TMUX kill-server 2>/dev/null
-sleep 1
+wait_gone
 echo "PASS 10: 5 rapid create-destroy cycles OK"
 
 if [ $FAIL -eq 0 ]; then

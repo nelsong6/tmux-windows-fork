@@ -10,8 +10,9 @@ TERM=screen
 
 [ -z "$TEST_TMUX" ] && TEST_TMUX=$(readlink -f ../tmux)
 TMUX="$TEST_TMUX -Ltest"
+. "$(dirname "$0")/win32-wait.sh"
 $TMUX kill-server 2>/dev/null
-sleep 1
+wait_gone
 
 trap "$TMUX kill-server 2>/dev/null" 0 1 15
 
@@ -29,7 +30,7 @@ for i in regress/conf/*.conf; do
 		FAIL=1
 	fi
 	$TMUX kill-server 2>/dev/null
-	sleep 1
+	wait_gone
 	COUNT=$((COUNT + 1))
 done
 

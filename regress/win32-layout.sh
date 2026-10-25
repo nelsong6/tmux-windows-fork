@@ -9,8 +9,9 @@ TERM=screen
 
 [ -z "$TEST_TMUX" ] && TEST_TMUX=$(readlink -f ../tmux)
 TMUX="$TEST_TMUX -Ltest"
+. "$(dirname "$0")/win32-wait.sh"
 $TMUX kill-server 2>/dev/null
-sleep 1
+wait_gone
 
 FNULL="-fNUL"
 OUT=$(mktemp)
@@ -24,7 +25,6 @@ fail() {
 
 # --- Test 1: Single pane dimensions match session size ---
 $TMUX $FNULL new -d -slayout -x 120 -y 40 < /dev/null || exit 1
-sleep 1
 
 $TMUX list-panes -tlayout -F '#{pane_width} #{pane_height}' | tr -d '\r' >$OUT
 W=$(awk '{print $1}' $OUT)
@@ -36,7 +36,6 @@ echo "PASS 1: single pane 120x40"
 
 # --- Test 2: Horizontal split produces two panes with equal width ---
 $TMUX split-window -h -tlayout || exit 1
-sleep 1
 
 $TMUX list-panes -tlayout -F '#{pane_width}' | tr -d '\r' >$OUT
 W1=$(sed -n '1p' $OUT)
@@ -50,13 +49,11 @@ echo "PASS 2: horizontal split ($W1 + $W2 + 1 = $TOTAL)"
 
 $TMUX kill-session -tlayout
 $TMUX kill-server 2>/dev/null
-sleep 1
+wait_gone
 
 # --- Test 3: Vertical split produces two panes with equal height ---
 $TMUX $FNULL new -d -slayout -x 80 -y 40 < /dev/null || exit 1
-sleep 1
 $TMUX split-window -v -tlayout || exit 1
-sleep 1
 
 $TMUX list-panes -tlayout -F '#{pane_height}' | tr -d '\r' >$OUT
 H1=$(sed -n '1p' $OUT)
@@ -70,15 +67,13 @@ echo "PASS 3: vertical split ($H1 + $H2 + 1 = $TOTAL)"
 
 $TMUX kill-session -tlayout
 $TMUX kill-server 2>/dev/null
-sleep 1
+wait_gone
 
 # --- Test 4: Four-pane tiled layout ---
 $TMUX $FNULL new -d -slayout -x 100 -y 40 < /dev/null || exit 1
-sleep 1
 $TMUX split-window -h -tlayout || exit 1
 $TMUX split-window -v -tlayout:0.0 || exit 1
 $TMUX split-window -v -tlayout:0.2 || exit 1
-sleep 1
 
 COUNT=$($TMUX list-panes -tlayout | wc -l)
 [ "$COUNT" -eq 4 ] || { fail "4-pane: got $COUNT panes"; exit 1; }
@@ -95,7 +90,6 @@ echo "PASS 4: four-pane layout ($COUNT panes)"
 
 # --- Test 5: select-layout tiled ---
 $TMUX select-layout -tlayout tiled || exit 1
-sleep 1
 
 $TMUX list-panes -tlayout -F '#{pane_width} #{pane_height}' | tr -d '\r' >$OUT
 # In tiled layout, all panes should be approximately equal
@@ -117,7 +111,6 @@ echo "PASS 5: tiled layout (w:$WMIN-$WMAX h:$HMIN-$HMAX)"
 
 # --- Test 6: select-layout even-horizontal ---
 $TMUX select-layout -tlayout even-horizontal || exit 1
-sleep 1
 
 $TMUX list-panes -tlayout -F '#{pane_width}' | tr -d '\r' >$OUT
 WMIN=999; WMAX=0
@@ -131,7 +124,6 @@ echo "PASS 6: even-horizontal layout (w:$WMIN-$WMAX)"
 
 # --- Test 7: select-layout even-vertical ---
 $TMUX select-layout -tlayout even-vertical || exit 1
-sleep 1
 
 $TMUX list-panes -tlayout -F '#{pane_height}' | tr -d '\r' >$OUT
 HMIN=999; HMAX=0
