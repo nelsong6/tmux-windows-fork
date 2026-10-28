@@ -323,5 +323,4 @@ when the server exits or the pipe handle is closed.
 - Regex engine is simplified (covers tmux's pattern matching needs)
 - `SIGCHLD` is emulated via process watcher thread; timing may differ from Unix
 - Some terminal features may behave differently under ConPTY vs. native Unix PTYs
-- Control mode (`-C`) not supported — libevent `evsig_init_` socketpair fails
 - tmux output uses `\r\n` line endings; scripts should strip `\r` when comparing output

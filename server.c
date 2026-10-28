@@ -543,11 +543,12 @@ server_accept(int fd, short events, __unused void *data)
 					free(tc->tty_token);
 					tc->tty_token = NULL;
 					if ((tc->flags & CLIENT_IDENTIFIED) &&
-					    !(tc->flags &
-					    (CLIENT_TERMINAL|CLIENT_CONTROL))) {
+					    !(tc->flags & CLIENT_TERMINAL)) {
 						u_int sx = tc->tty.sx;
 						u_int sy = tc->tty.sy;
-						if (tty_init(&tc->tty, tc) == 0) {
+						if (tc->flags & CLIENT_CONTROL)
+							control_set_fd(tc);
+						else if (tty_init(&tc->tty, tc) == 0) {
 							if (sx == 0)
 								sx = 80;
 							if (sy == 0)

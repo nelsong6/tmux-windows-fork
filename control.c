@@ -768,12 +768,22 @@ control_start(struct client *c)
 {
 	struct control_state	*cs;
 
+#ifdef _WIN32
+	/*
+	 * Windows cannot pass stdin and stdout to the server: the tty channel
+	 * socket carries both directions, and may only arrive after identify,
+	 * in which case server_accept calls control_set_fd.
+	 */
+	if (c->fd != -1)
+		setblocking(c->fd, 0);
+#else
 	if (c->flags & CLIENT_CONTROLCONTROL) {
 		close(c->out_fd);
 		c->out_fd = -1;
 	} else
 		setblocking(c->out_fd, 0);
 	setblocking(c->fd, 0);
+#endif
 
 	cs = c->control_state = xcalloc(1, sizeof *cs);
 	RB_INIT(&cs->panes);
@@ -786,6 +796,9 @@ control_start(struct client *c)
 	if (cs->read_event == NULL)
 		fatalx("out of memory");
 
+#ifdef _WIN32
+	cs->write_event = cs->read_event;
+#else
 	if (c->flags & CLIENT_CONTROLCONTROL)
 		cs->write_event = cs->read_event;
 	else {
@@ -794,6 +807,7 @@ control_start(struct client *c)
 		if (cs->write_event == NULL)
 			fatalx("out of memory");
 	}
+#endif
 	bufferevent_setwatermark(cs->write_event, EV_WRITE, CONTROL_BUFFER_LOW,
 	    0);
 
@@ -802,6 +816,16 @@ control_start(struct client *c)
 		bufferevent_enable(cs->write_event, EV_WRITE);
 	}
 }
+
+#ifdef _WIN32
+/* Tty channel arrived after control_start. */
+void
+control_set_fd(struct client *c)
+{
+	setblocking(c->fd, 0);
+	bufferevent_setfd(c->control_state->read_event, c->fd);
+}
+#endif
 
 /* Control client ready. */
 void
@@ -830,7 +854,7 @@ control_stop(struct client *c)
 	struct control_block	*cb, *cb1;
 	struct control_sub	*csub, *csub1;
 
-	if (~c->flags & CLIENT_CONTROLCONTROL)
+	if (cs->write_event != cs->read_event)
 		bufferevent_free(cs->write_event);
 	bufferevent_free(cs->read_event);
 
