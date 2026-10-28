@@ -475,6 +475,12 @@ client_main(struct event_base *base, int argc, char **argv, uint64_t flags,
 	} else if (msg == MSG_SHELL)
 		proc_send(client_peer, msg, -1, NULL, 0);
 
+#ifdef _WIN32
+	/* A control client never gets MSG_READY; relay its stdio now. */
+	if (client_flags & CLIENT_CONTROL)
+		client_start_tty_relay();
+#endif
+
 	/* Start main loop. */
 	proc_loop(client_proc, NULL);
 
@@ -695,6 +701,9 @@ client_stdin_thread_func(LPVOID arg)
 		if (send((SOCKET)fd, buf, (int)nread, 0) <= 0)
 			break;
 	}
+	/* End of input ends a control client, as on other platforms. */
+	if (client_flags & CLIENT_CONTROL)
+		shutdown((SOCKET)fd, SD_SEND);
 	return (0);
 }
 
@@ -707,8 +716,9 @@ client_start_tty_relay(void)
 	if (client_tty_fd == -1)
 		return;
 
-	/* Set console to raw VT mode. */
-	win32_tty_raw_mode();
+	/* Set console to raw VT mode; control mode reads lines. */
+	if (~client_flags & CLIENT_CONTROL)
+		win32_tty_raw_mode();
 
 	/* Set tty socket to non-blocking for libevent. */
 	setblocking(client_tty_fd, 0);

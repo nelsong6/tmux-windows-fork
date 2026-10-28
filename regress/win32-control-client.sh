@@ -1,10 +1,9 @@
 #!/bin/sh
 
 # Control mode test for Windows.
-# Upstream control-client-sanity.sh exercises -C mode extensively.
-# On Windows, control mode is not supported (libevent signal init fails).
-# This test verifies the graceful failure and tests equivalent operations
-# via normal commands instead.
+# Tests 1-6 are the pane operations of upstream control-client-sanity.sh,
+# run as normal commands. Tests 7-9 drive a -C client: replies, option
+# subscriptions and exit at end of input.
 
 PATH=/bin:/usr/bin
 TERM=screen
@@ -81,6 +80,33 @@ COUNT=$(wc -l < $OUT)
 [ "$COUNT" -ge 1 ] || { fail "no panes in final layout"; exit 1; }
 grep -q '%' $OUT || { fail "no pane IDs in layout output"; exit 1; }
 echo "PASS 6: server alive, layout sane ($COUNT pane lines)"
+
+# --- Test 7: control client gets command replies ---
+CTL=$(mktemp)
+trap "rm -f $OUT $CTL; $TMUX kill-server 2>/dev/null" 0 1 15
+ctl_has() {
+	tr -d '\r' <$CTL | grep -q -- "$1"
+}
+$TMUX set -g @tb start
+(
+	echo 'display -p ctl-ok'
+	echo "refresh-client -B 'tb::#{@tb}'"
+	wait_until ctl_has ': start$'
+	$TMUX set -g @tb clicked
+	wait_until ctl_has ': clicked$'
+) | $TMUX -C attach -tctrl >$CTL 2>&1 &
+wait_until ctl_has '^ctl-ok$' || fail "control reply: $(cat $CTL)"
+echo "PASS 7: control client command reply"
+
+# --- Test 8: control client is notified of a subscribed option ---
+wait_until ctl_has '^%subscription-changed tb .*: clicked$' || \
+	fail "subscription: $(cat $CTL)"
+echo "PASS 8: control client subscription"
+
+# --- Test 9: control client exits at end of input ---
+wait_until ctl_has '^%exit' || fail "control exit: $(cat $CTL)"
+$TMUX has -tctrl || fail "server died with control client"
+echo "PASS 9: control client exits, server alive"
 
 $TMUX kill-server 2>/dev/null
 

@@ -118,6 +118,10 @@ server_client_tty_wait_timeout(__unused int fd, __unused short events,
 	free(c->tty_token);
 	c->tty_token = NULL;
 
+	/* A control client has no other channel to talk over. */
+	if (c->flags & CLIENT_CONTROL)
+		c->flags |= CLIENT_EXIT;
+
 	if (c->tty_wait_item != NULL) {
 		cmdq_continue(c->tty_wait_item);
 		c->tty_wait_item = NULL;
