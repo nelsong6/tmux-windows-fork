@@ -116,4 +116,21 @@ osdep_event_init(void)
 	return (event_init());
 }
 
+/*
+ * Are all the modifiers in a key still physically held? Terminals report
+ * presses, not releases, so this asks Windows for the keyboard of the desktop
+ * the server runs on.
+ */
+int
+win32_modifiers_held(key_code modifiers)
+{
+	if ((modifiers & KEYC_CTRL) && !(GetAsyncKeyState(VK_CONTROL) & 0x8000))
+		return (0);
+	if ((modifiers & KEYC_META) && !(GetAsyncKeyState(VK_MENU) & 0x8000))
+		return (0);
+	if ((modifiers & KEYC_SHIFT) && !(GetAsyncKeyState(VK_SHIFT) & 0x8000))
+		return (0);
+	return (1);
+}
+
 #endif /* _WIN32 */

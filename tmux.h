@@ -2001,6 +2001,9 @@ struct client {
 
 	struct event		 repeat_timer;
 
+	struct event		 hold_timer;
+	key_code		 hold_modifiers;
+
 	struct event		 click_timer;
 	int			 click_where;
 	int			 click_wp;
@@ -2991,6 +2994,7 @@ int	 server_client_ranges_is_empty(struct visible_ranges *);
 void	 server_client_overlay_range(u_int, u_int, u_int, u_int, u_int, u_int,
 	     u_int, struct visible_ranges *);
 void	 server_client_set_key_table(struct client *, const char *);
+void	 server_client_hold_key_table(struct client *, key_code);
 const char *server_client_get_key_table(struct client *);
 int	 server_client_check_nested(struct client *);
 int	 server_client_handle_key(struct client *, struct key_event *);
@@ -3657,6 +3661,7 @@ char		*osdep_get_cwd(int);
 struct event_base *osdep_event_init(void);
 #ifdef _WIN32
 char		*win32_pane_command(pid_t);
+int		 win32_modifiers_held(key_code);
 #endif
 
 /* utf8-combined.c */

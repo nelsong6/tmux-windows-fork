@@ -52,6 +52,7 @@ static void	server_client_check_pane_buffer(struct window_pane *);
 static void	server_client_check_window_resize(struct window *);
 static key_code	server_client_check_mouse(struct client *, struct key_event *);
 static void	server_client_repeat_timer(int, short, void *);
+static void	server_client_hold_timer(int, short, void *);
 static void	server_client_click_timer(int, short, void *);
 static void	server_client_check_exit(struct client *);
 static void	server_client_check_redraw(struct client *);
@@ -294,6 +295,7 @@ server_client_set_key_table(struct client *c, const char *name)
 	if (name == NULL)
 		name = server_client_get_key_table(c);
 
+	evtimer_del(&c->hold_timer);
 	key_bindings_unref_table(c->keytable);
 	c->keytable = key_bindings_get_table(name, 1);
 	c->keytable->references++;
@@ -308,6 +310,36 @@ server_client_key_table_activity_diff(struct client *c)
 
 	timersub(&c->activity_time, &c->keytable->activity_time, &diff);
 	return ((diff.tv_sec * 1000ULL) + (diff.tv_usec / 1000ULL));
+}
+
+/*
+ * Keep the client's key table until the modifiers are released, checked
+ * every 10 milliseconds; a key or another table change ends it first.
+ */
+void
+server_client_hold_key_table(struct client *c, key_code modifiers)
+{
+	struct timeval	tv = { .tv_sec = 0, .tv_usec = 10000 };
+
+	c->hold_modifiers = modifiers;
+	evtimer_del(&c->hold_timer);
+	evtimer_add(&c->hold_timer, &tv);
+}
+
+/* Hold timer callback. */
+static void
+server_client_hold_timer(__unused int fd, __unused short events, void *data)
+{
+	struct client	*c = data;
+
+#ifdef _WIN32
+	if (win32_modifiers_held(c->hold_modifiers)) {
+		server_client_hold_key_table(c, c->hold_modifiers);
+		return;
+	}
+#endif
+	server_client_set_key_table(c, NULL);
+	server_status_client(c);
 }
 
 /* Get default key table. */
@@ -370,6 +402,7 @@ server_client_create(int fd)
 
 	evtimer_set(&c->repeat_timer, server_client_repeat_timer, c);
 	evtimer_set(&c->click_timer, server_client_click_timer, c);
+	evtimer_set(&c->hold_timer, server_client_hold_timer, c);
 
 	c->click_wp = -1;
 
@@ -542,6 +575,7 @@ server_client_lost(struct client *c)
 
 	evtimer_del(&c->repeat_timer);
 	evtimer_del(&c->click_timer);
+	evtimer_del(&c->hold_timer);
 
 	key_bindings_unref_table(c->keytable);
 
