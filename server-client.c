@@ -53,6 +53,7 @@ static void	server_client_check_window_resize(struct window *);
 static key_code	server_client_check_mouse(struct client *, struct key_event *);
 static void	server_client_repeat_timer(int, short, void *);
 static void	server_client_hold_timer(int, short, void *);
+static void	server_client_poll_hold(struct client *);
 static void	server_client_click_timer(int, short, void *);
 static void	server_client_check_exit(struct client *);
 static void	server_client_check_redraw(struct client *);
@@ -295,7 +296,7 @@ server_client_set_key_table(struct client *c, const char *name)
 	if (name == NULL)
 		name = server_client_get_key_table(c);
 
-	evtimer_del(&c->hold_timer);
+	server_client_cancel_hold(c);
 	key_bindings_unref_table(c->keytable);
 	c->keytable = key_bindings_get_table(name, 1);
 	c->keytable->references++;
@@ -314,16 +315,37 @@ server_client_key_table_activity_diff(struct client *c)
 
 /*
  * Keep the client's key table until the modifiers are released, checked
- * every 10 milliseconds; a key or another table change ends it first.
+ * every 10 milliseconds, then run release (if any), whose reference this
+ * takes. A key or another table change ends the hold first, without it.
  */
 void
-server_client_hold_key_table(struct client *c, key_code modifiers)
+server_client_hold_key_table(struct client *c, key_code modifiers,
+    struct cmd_list *release)
+{
+	server_client_cancel_hold(c);
+	c->hold_modifiers = modifiers;
+	c->hold_release = release;
+	server_client_poll_hold(c);
+}
+
+/* Check the held modifiers again in 10 milliseconds. */
+static void
+server_client_poll_hold(struct client *c)
 {
 	struct timeval	tv = { .tv_sec = 0, .tv_usec = 10000 };
 
-	c->hold_modifiers = modifiers;
-	evtimer_del(&c->hold_timer);
 	evtimer_add(&c->hold_timer, &tv);
+}
+
+/* End a hold without running its release command. */
+void
+server_client_cancel_hold(struct client *c)
+{
+	evtimer_del(&c->hold_timer);
+	if (c->hold_release != NULL) {
+		cmd_list_free(c->hold_release);
+		c->hold_release = NULL;
+	}
 }
 
 /* Hold timer callback. */
@@ -331,15 +353,22 @@ static void
 server_client_hold_timer(__unused int fd, __unused short events, void *data)
 {
 	struct client	*c = data;
+	struct cmd_list	*release;
 
 #ifdef _WIN32
 	if (win32_modifiers_held(c->hold_modifiers)) {
-		server_client_hold_key_table(c, c->hold_modifiers);
+		server_client_poll_hold(c);
 		return;
 	}
 #endif
+	release = c->hold_release;
+	c->hold_release = NULL;
 	server_client_set_key_table(c, NULL);
 	server_status_client(c);
+	if (release != NULL) {
+		cmdq_append(c, cmdq_get_command(release, NULL));
+		cmd_list_free(release);
+	}
 }
 
 /* Get default key table. */
@@ -575,7 +604,7 @@ server_client_lost(struct client *c)
 
 	evtimer_del(&c->repeat_timer);
 	evtimer_del(&c->click_timer);
-	evtimer_del(&c->hold_timer);
+	server_client_cancel_hold(c);
 
 	key_bindings_unref_table(c->keytable);
 

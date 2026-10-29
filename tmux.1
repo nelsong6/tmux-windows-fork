@@ -1645,11 +1645,12 @@ Suspend a client by sending
 (tty stop).
 .Tg switchc
 .It Xo Ic switch-client
-.Op Fl ElnprZ
+.Op Fl EHlnprZ
 .Op Fl c Ar target-client
 .Op Fl O Ar sort-order
 .Op Fl t Ar target-session
 .Op Fl T Ar key-table
+.Op Fl R Ar release-command
 .Xc
 .D1 Pq alias: Ic switchc
 Switch the current session for client
@@ -1724,11 +1725,14 @@ With
 (Windows only), the key table also ends when the modifiers of the key that ran
 the command (Ctrl, Alt or Shift) are released, so a chord lasts only while
 they are held.
-For example, Ctrl+T opens a window, and Ctrl+A pressed before Ctrl is
-released runs a command in it:
+.Fl R
+gives a command to run when they are released; a key that ends the table
+first does not run it.
+For example, Ctrl+T opens a plain window when Ctrl is released, or one
+running a menu if Ctrl+A comes first:
 .Bd -literal -offset indent
-bind-key -n C-t { new-window ; switch-client -Tctrl-t -H }
-bind-key -Tctrl-t C-a send-keys at Enter
+bind-key -n C-t switch-client -Tctrl-t -H -R new-window
+bind-key -Tctrl-t C-a new-window menu
 .Ed
 .El
 .Sh WINDOWS AND PANES

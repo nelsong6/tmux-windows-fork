@@ -34,9 +34,9 @@ const struct cmd_entry cmd_switch_client_entry = {
 	.name = "switch-client",
 	.alias = "switchc",
 
-	.args = { "c:EFHlnO:pt:rT:Z", 0, 0, NULL },
+	.args = { "c:EFHlnO:pt:rR:T:Z", 0, 0, NULL },
 	.usage = "[-EHlnprZ] [-c target-client] [-t target-session] "
-		 "[-T key-table] [-O order]",
+		 "[-T key-table] [-R release-command] [-O order]",
 
 	/* -t is special */
 
@@ -64,6 +64,8 @@ cmd_switch_client_exec(struct cmd *self, struct cmdq_item *item)
 #ifdef _WIN32
 	struct key_event	*event;
 	key_code		 modifiers = 0;
+	struct cmd_parse_result	*pr;
+	struct cmd_list		*release = NULL;
 #endif
 
 	if (tflag != NULL &&
@@ -94,6 +96,10 @@ cmd_switch_client_exec(struct cmd *self, struct cmdq_item *item)
 			cmdq_error(item, "table %s doesn't exist", tablename);
 			return (CMD_RETURN_ERROR);
 		}
+		if (args_has(args, 'R') && !args_has(args, 'H')) {
+			cmdq_error(item, "-R needs -H");
+			return (CMD_RETURN_ERROR);
+		}
 		if (args_has(args, 'H')) {
 #ifdef _WIN32
 			event = cmdq_get_event(item);
@@ -102,18 +108,28 @@ cmd_switch_client_exec(struct cmd *self, struct cmdq_item *item)
 				cmdq_error(item, "-H needs a key with a modifier");
 				return (CMD_RETURN_ERROR);
 			}
+			if (args_has(args, 'R')) {
+				pr = cmd_parse_from_string(args_get(args, 'R'),
+				    NULL);
+				if (pr->status == CMD_PARSE_ERROR) {
+					cmdq_error(item, "-R: %s", pr->error);
+					free(pr->error);
+					return (CMD_RETURN_ERROR);
+				}
+				release = pr->cmdlist;
+			}
 #else
 			cmdq_error(item, "-H is only supported on Windows");
 			return (CMD_RETURN_ERROR);
 #endif
 		}
-		evtimer_del(&tc->hold_timer);
+		server_client_cancel_hold(tc);
 		table->references++;
 		key_bindings_unref_table(tc->keytable);
 		tc->keytable = table;
 #ifdef _WIN32
 		if (args_has(args, 'H'))
-			server_client_hold_key_table(tc, modifiers);
+			server_client_hold_key_table(tc, modifiers, release);
 #endif
 		return (CMD_RETURN_NORMAL);
 	}
