@@ -1718,6 +1718,18 @@ bind-key -Ttable2 c list-keys
 bind-key -Ttable1 b switch-client -Ttable2
 bind-key -Troot   a switch-client -Ttable1
 .Ed
+.Pp
+With
+.Fl H
+(Windows only), the key table also ends when the modifiers of the key that ran
+the command (Ctrl, Alt or Shift) are released, so a chord lasts only while
+they are held.
+For example, Ctrl+T opens a window, and Ctrl+A pressed before Ctrl is
+released runs a command in it:
+.Bd -literal -offset indent
+bind-key -n C-t { new-window ; switch-client -Tctrl-t -H }
+bind-key -Tctrl-t C-a send-keys at Enter
+.Ed
 .El
 .Sh WINDOWS AND PANES
 Each window displayed by

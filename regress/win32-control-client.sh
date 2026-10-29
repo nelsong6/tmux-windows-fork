@@ -3,7 +3,7 @@
 # Control mode test for Windows.
 # Tests 1-6 are the pane operations of upstream control-client-sanity.sh,
 # run as normal commands. Tests 7-9 drive a -C client: replies, option
-# subscriptions and exit at end of input.
+# subscriptions and exit at end of input; test 10 a held key table (-H).
 
 PATH=/bin:/usr/bin
 TERM=screen
@@ -107,6 +107,27 @@ echo "PASS 8: control client subscription"
 wait_until ctl_has '^%exit' || fail "control exit: $(cat $CTL)"
 $TMUX has -tctrl || fail "server died with control client"
 echo "PASS 9: control client exits, server alive"
+
+# --- Test 10: switch-client -H holds a key table only while the key's
+# modifiers are down. Nothing holds Ctrl here, so a held table ends at once,
+# and -H from a command with no key behind it is refused. ---
+: >$CTL
+$TMUX bind -Theld x display held-x
+$TMUX bind -n C-t switch-client -Theld -H
+(
+	echo 'switch-client -Theld -H'
+	echo 'send-keys -K C-t'
+	sleep 1
+	echo "display -p 'table=#{client_key_table}'"
+	wait_until ctl_has '^table='
+) | $TMUX -C attach -tctrl >$CTL 2>&1 &
+wait_until ctl_has '^table=' || fail "hold: no reply: $(cat $CTL)"
+ctl_has '^-H needs a key with a modifier$' || \
+	fail "hold: -H without a key was not refused: $(cat $CTL)"
+ctl_has '^table=root$' || \
+	fail "hold: table stayed with Ctrl up: $(cat $CTL)"
+wait
+echo "PASS 10: switch-client -H"
 
 $TMUX kill-server 2>/dev/null
 
