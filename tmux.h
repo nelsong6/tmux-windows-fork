@@ -2003,6 +2003,7 @@ struct client {
 
 	struct event		 hold_timer;
 	key_code		 hold_modifiers;
+	struct cmd_list		*hold_release;
 
 	struct event		 click_timer;
 	int			 click_where;
@@ -2994,7 +2995,9 @@ int	 server_client_ranges_is_empty(struct visible_ranges *);
 void	 server_client_overlay_range(u_int, u_int, u_int, u_int, u_int, u_int,
 	     u_int, struct visible_ranges *);
 void	 server_client_set_key_table(struct client *, const char *);
-void	 server_client_hold_key_table(struct client *, key_code);
+void	 server_client_hold_key_table(struct client *, key_code,
+	     struct cmd_list *);
+void	 server_client_cancel_hold(struct client *);
 const char *server_client_get_key_table(struct client *);
 int	 server_client_check_nested(struct client *);
 int	 server_client_handle_key(struct client *, struct key_event *);
