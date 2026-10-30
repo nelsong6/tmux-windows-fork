@@ -118,6 +118,12 @@ jobs:
           taskkill //F //IM tmux.exe 2>/dev/null || true
           TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-wrap.sh
 
+      - name: Run line size tests
+        shell: bash
+        run: |
+          taskkill //F //IM tmux.exe 2>/dev/null || true
+          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-linesize.sh
+
       - name: Run palette tests
         shell: bash
         run: |

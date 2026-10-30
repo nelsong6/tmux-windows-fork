@@ -253,6 +253,18 @@ screen_set_title(struct screen *s, const char *title)
 	return (1);
 }
 
+/* Width of a line: half the screen for a double-width or double-height line. */
+u_int
+screen_line_size_x(struct screen *s, u_int py)
+{
+	struct grid_line	*gl = grid_get_line(s->grid, s->grid->hsize + py);
+	u_int			 sx = screen_size_x(s);
+
+	if ((gl->flags & GRID_LINE_SIZE) && sx > 1)
+		return (sx / 2);
+	return (sx);
+}
+
 /* Set screen path. */
 void
 screen_set_path(struct screen *s, const char *path)

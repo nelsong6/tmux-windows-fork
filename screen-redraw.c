@@ -861,10 +861,13 @@ screen_redraw_draw_borders_cell(struct screen_redraw_ctx *ctx, u_int i, u_int j)
 	else
 		isolates = 0;
 
-	if (ctx->statustop)
+	if (ctx->statustop) {
+		tty_set_line_size(tty, ctx->statuslines + j, 0);
 		tty_cursor(tty, i, ctx->statuslines + j);
-	else
+	} else {
+		tty_set_line_size(tty, j, 0);
 		tty_cursor(tty, i, j);
+	}
 	if (isolates)
 		tty_puts(tty, END_ISOLATE);
 
@@ -1117,6 +1120,7 @@ screen_redraw_draw_scrollbar(struct screen_redraw_ctx *ctx,
 			    py < yoff - oy - 1 ||
 			    py >= sy || py < 0)
 				continue;
+			tty_set_line_size(tty, py, 0);
 			tty_cursor(tty, px, py);
 			if ((sb_pos == PANE_SCROLLBARS_LEFT &&
 			    i >= sb_w && i < sb_w + sb_pad) ||

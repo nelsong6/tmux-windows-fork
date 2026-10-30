@@ -1779,6 +1779,16 @@ and
 commands may be used to swap panes without changing their position.
 Panes are numbered beginning from zero in the order they are created.
 .Pp
+A program in a pane may make a line double width or double height
+(DECDWL, DECDHL); the line then holds half the pane's width.
+It is drawn at double size when the pane is as wide as the terminal and
+nothing else shares its row, and at normal size otherwise, since the terminal
+sizes whole rows.
+While any row is double size,
+.Nm
+does not use the terminal's left and right margins, which turn double size
+off.
+.Pp
 By default, a
 .Nm
 pane permits direct access to the terminal contained in the pane.
