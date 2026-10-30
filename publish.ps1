@@ -40,34 +40,15 @@ if ($LASTEXITCODE -ne 0) { throw 'downloading tmux-windows failed' }
 publish-tool -Name tmux -Version $version -Path $dir `
     -Entry tmux.exe -Repo "https://github.com/$repo" -Commit $commit
 
-# Every open tab moves onto the release in place: its server hands everything to
-# the new build (upgrade-server) and nothing in it restarts. Tab servers and the
-# spare are wt<n> and wtspare<n> (wt-tmux.cmd); test servers are left alone. The
-# release runs from the Drive copy once Synology Drive has it, as new tabs do.
-. \\NelsonNAS\files\shell-config-profile-home\at\lib\tools.ps1
+# Every open tab moves onto the release in place, and takes the config again, which
+# a new build can make valid: the home profile's sync-servers.ps1, which home-sync
+# also runs. The release runs from the Drive copy once Synology Drive has it, as new
+# tabs do.
 $local = Join-Path $HOME "tools\tmux\$version\tmux.exe"
 foreach ($attempt in 1..24) {
     if (Test-Path $local) { break }
     Start-Sleep -Seconds 5
 }
-$exe = Get-ToolEntry tmux
-$prefix = "tmux-$env:USERNAME-"
-$labels = [IO.Directory]::GetFiles('\\.\pipe\') | ForEach-Object { Split-Path $_ -Leaf } |
-    Where-Object { $_ -like "${prefix}wt*" } | ForEach-Object { $_.Substring($prefix.Length) }
-foreach ($label in $labels) {
-    $before = & $exe -L $label display -p '#{pid}' 2>&1
-    $out = & $exe -L $label upgrade-server $exe 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "$label`: not upgraded: $out"
-        continue
-    }
-    $state = 'waiting'
-    foreach ($attempt in 1..60) {
-        Start-Sleep -Seconds 1
-        $now = (& $exe -L $label display -p '#{pid}|#{server_upgrade}' 2>&1) -split '\|', 2
-        if ($now[0] -ne $before -and $now[1] -eq '') { $state = 'upgraded'; break }
-        if ($now[1] -like 'failed*') { $state = $now[1]; break }
-        $state = "$($now[1]); it moves when that ends"
-    }
-    Write-Host "$label`: $state"
+foreach ($s in & \\NelsonNAS\files\shell-config-profile-home\tmux\sync-servers.ps1) {
+    Write-Host "$($s.Server): $($s.Build); config $($s.Config)"
 }
