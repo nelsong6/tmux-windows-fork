@@ -584,7 +584,11 @@ file_write_open(struct client_files *files, struct tmuxpeer *peer,
 	const char		*path;
 	struct msg_write_ready	 reply;
 	struct client_file	 find, *cf;
+#ifdef _WIN32
+	const int		 flags = O_WRONLY|O_CREAT|_O_BINARY;
+#else
 	const int		 flags = O_NONBLOCK|O_WRONLY|O_CREAT;
+#endif
 	int			 error = 0;
 
 	if (msglen < sizeof *msg)
@@ -626,15 +630,13 @@ file_write_open(struct client_files *files, struct tmuxpeer *peer,
 
 #ifdef _WIN32
 	/*
-	 * On Windows, stdout/stderr are CRT file descriptors (console
-	 * handles), not Winsock sockets. libevent's bufferevent uses
-	 * select() which only works with sockets on Windows.  Skip the
+	 * On Windows, stdout/stderr and files are CRT file descriptors, not
+	 * Winsock sockets. libevent's bufferevent uses select() which only
+	 * works with sockets on Windows, so it never writes. Skip the
 	 * bufferevent; file_write_data() will write directly to cf->fd.
 	 */
-	if (msg->fd == STDOUT_FILENO || msg->fd == STDERR_FILENO) {
-		cf->event = NULL;
-		goto reply;
-	}
+	cf->event = NULL;
+	goto reply;
 #endif
 	cf->event = bufferevent_new(cf->fd, NULL, file_write_callback,
 	    file_write_error_callback, cf);
@@ -764,7 +766,14 @@ file_read_open(struct client_files *files, struct tmuxpeer *peer,
 	const char		*path;
 	struct msg_read_done	 reply;
 	struct client_file	 find, *cf;
+#ifdef _WIN32
+	const int		 flags = O_RDONLY|_O_BINARY;
+	struct msg_read_data	*data;
+	char			 buf[BUFSIZ];
+	int			 n;
+#else
 	const int		 flags = O_NONBLOCK|O_RDONLY;
+#endif
 	int			 error;
 
 	if (msglen < sizeof *msg)
@@ -817,6 +826,22 @@ file_read_open(struct client_files *files, struct tmuxpeer *peer,
 		error = 0;
 		goto reply;
 	}
+
+	/*
+	 * A file has the same problem: the bufferevent would never read it.
+	 * Read it whole here and send it, then read-done.
+	 */
+	data = xmalloc(sizeof *data + sizeof buf);
+	data->stream = cf->stream;
+	while ((n = _read(cf->fd, buf, sizeof buf)) > 0) {
+		memcpy(data + 1, buf, n);
+		proc_send(peer, MSG_READ, -1, data, sizeof *data + n);
+	}
+	free(data);
+	error = (n < 0) ? errno : 0;
+	close(cf->fd);
+	file_free(cf);
+	goto reply;
 #endif
 	cf->event = bufferevent_new(cf->fd, file_read_callback, NULL,
 	    file_read_error_callback, cf);

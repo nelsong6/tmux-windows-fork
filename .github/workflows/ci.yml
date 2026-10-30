@@ -88,6 +88,12 @@ jobs:
           taskkill //F //IM tmux.exe 2>/dev/null || true
           TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-has-session.sh
 
+      - name: Run file tests
+        shell: bash
+        run: |
+          taskkill //F //IM tmux.exe 2>/dev/null || true
+          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-file.sh
+
       - name: Run layout tests
         shell: bash
         run: |
