@@ -506,6 +506,14 @@ window_pane_update_focus(struct window_pane *wp)
 	struct client	*c;
 	int		 focused = 0;
 
+	/*
+	 * A pane taken over by upgrade-server keeps the focus it had: it has no
+	 * pipe to be told of a change until the old server has gone, and focus
+	 * is settled again then.
+	 */
+	if (server_upgrading)
+		return;
+
 	if (wp != NULL && (~wp->flags & PANE_EXITED)) {
 		if (wp != wp->window->active)
 			focused = 0;

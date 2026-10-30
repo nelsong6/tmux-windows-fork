@@ -17,7 +17,7 @@ $OUTER kill-server 2>/dev/null
 wait_gone
 
 CFG=$(mktemp)
-printf "set -g default-shell '%s'\n" "$COMSPEC" >$CFG
+printf "set -g default-shell '%s'\nset -g focus-events on\n" "$COMSPEC" >$CFG
 OUT=$(mktemp)
 trap "rm -f $CFG $OUT; $TMUX kill-server 2>/dev/null; $OUTER kill-server 2>/dev/null" 0 1 15
 FAIL=0
@@ -47,6 +47,14 @@ pid_changed_from() {
 
 outer_has() {
 	$OUTER capture-pane -tout -p 2>/dev/null | tr -d '\r' | grep -q -- "$1"
+}
+
+client_unfocused() {
+	! $TMUX list-clients -F '#{client_flags}' | grep -q focused
+}
+
+client_focused() {
+	$TMUX list-clients -F '#{client_flags}' | grep -q focused
 }
 
 client_count_is() {
@@ -79,6 +87,15 @@ $OUTER send-keys -tout "set TMUX=" Enter \
 wait_until client_count_is 1 || { fail "client never attached"; exit 1; }
 wait_until outer_has BEFORE_MARK || fail "client never drew the pane"
 
+# The client's pane asks for focus reports, as Claude Code and spotify_player
+# do, and the client's terminal has lost focus: taking the client over must
+# not report a change before the pane's pipe is back, and keeps the client
+# unfocused.
+$TMUX send-keys -tup:0.1 'prompt FOCUS$E[?1004h$G' Enter
+wait_for up:0.1 "^FOCUS" || fail "focus prompt never drawn"
+$OUTER send-keys -tout -H 1b 5b 4f
+wait_until client_unfocused || fail "client never lost focus"
+
 PID0=$(server_pid)
 pane_pids >$OUT
 PANES0=$(cat $OUT)
@@ -96,7 +113,10 @@ $TMUX list-keys -T root F12 | grep -q f12-bound || fail "key binding lost"
 [ "$($TMUX display -tup:1 -p '#{window_name}' | tr -d '\r')" = second ] ||
 	fail "window name lost"
 client_count_is 1 || fail "client lost"
-echo "PASS 1: upgrade keeps panes, screens, options, buffers, keys and client"
+client_unfocused || fail "the upgrade changed the client's focus"
+$OUTER send-keys -tout -H 1b 5b 49
+wait_until client_focused || fail "focus-in lost after the upgrade"
+echo "PASS 1: upgrade keeps panes, screens, options, buffers, keys and client, with focus reports on"
 
 # --- Test 2: the panes and the client work after the upgrade ---
 $TMUX send-keys -tup:0.0 "echo AFTER_MARK" Enter

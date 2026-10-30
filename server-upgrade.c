@@ -1038,6 +1038,7 @@ upgrade_restore_client(struct upgrade_reader *r)
 	size_t			 size;
 	int			 fd;
 	u_int			 i, sx, sy, xpixel, ypixel, sid, lsid;
+	uint64_t		 flags;
 	char			*cause;
 
 	upr_obj(r, &o);
@@ -1056,7 +1057,8 @@ upgrade_restore_client(struct upgrade_reader *r)
 			return;
 		}
 	}
-	c->flags |= upr_u64(&o) | CLIENT_IDENTIFIED;
+	flags = upr_u64(&o);
+	c->flags |= flags | CLIENT_IDENTIFIED;
 	c->pid = (pid_t)upr_u32(&o);
 	c->term_name = upr_str(&o);
 	c->term_features = upr_u32(&o);
@@ -1122,6 +1124,8 @@ upgrade_restore_client(struct upgrade_reader *r)
 		return;
 	}
 	server_client_set_session(c, s);
+	if (~flags & CLIENT_FOCUSED)
+		c->flags &= ~CLIENT_FOCUSED;	/* set_session assumes focus */
 	c->last_session = session_find_by_id(lsid);
 	server_client_set_key_table(c, NULL);
 	c->flags |= CLIENT_ATTACHED;
@@ -1665,6 +1669,7 @@ int
 server_upgrade_restore(void)
 {
 	struct upgrade_reader	 r, o;
+	struct window		*w;
 	struct window_pane	*wp;
 	struct client		*c;
 	HANDLE			 state, ack;
@@ -1799,6 +1804,8 @@ server_upgrade_restore(void)
 	TAILQ_FOREACH(c, &clients, entry)
 		server_redraw_client(c);
 	server_upgrading = 0;
+	RB_FOREACH(w, windows, &windows)
+		window_update_focus(w);
 	log_debug("upgrade: took over from the old server");
 	return (fd);
 
