@@ -152,6 +152,7 @@ struct winlink;
 #define KEYC_META            0x00100000000000ULL
 #define KEYC_CTRL            0x00200000000000ULL
 #define KEYC_SHIFT           0x00400000000000ULL
+#define KEYC_SUPER           0x00800000000000ULL
 
 /* Key flag bits. */
 #define KEYC_LITERAL	     0x01000000000000ULL
@@ -2914,6 +2915,7 @@ void	 key_bindings_reset(const char *, key_code);
 void	 key_bindings_remove_table(const char *);
 void	 key_bindings_reset_table(const char *);
 void	 key_bindings_init(void);
+void	 key_bindings_global(key_code);
 struct cmdq_item *key_bindings_dispatch(struct key_binding *,
 	     struct cmdq_item *, struct client *, struct key_event *,
 	     struct cmd_find_state *);
@@ -3665,6 +3667,7 @@ struct event_base *osdep_event_init(void);
 #ifdef _WIN32
 char		*win32_pane_command(pid_t);
 int		 win32_modifiers_held(key_code);
+void		 win32_global_keys_start(void);
 #endif
 
 /* utf8-combined.c */

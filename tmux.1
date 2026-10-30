@@ -3732,6 +3732,12 @@ Shift keys with
 .Ql S-
 and Alt (meta) with
 .Ql M- .
+On Windows, keys pressed with the Windows key may be prefixed with
+.Ql W-
+and bound in the
+.Em global
+table (see
+.Ic bind-key ) .
 In addition, the following special key names are accepted:
 .Em Up ,
 .Em Down ,
@@ -3818,6 +3824,23 @@ Keys may also be bound in custom key tables and the
 .Ic switch-client
 .Fl T
 command used to switch to them from a key binding.
+On Windows, the
+.Em global
+table holds keys pressed with the Windows key anywhere on the desktop, not
+just in a terminal, for example
+.Ql W-\(ga
+(Win+\(ga).
+Its commands run for the most recently active client; a server with no
+attached client ignores them.
+Only keys that type a character are seen, with
+.Ql C- ,
+.Ql M-
+and
+.Ql S-
+for any other modifiers held.
+.Nm
+watches the keyboard only once the table has a key, and passes every key on,
+so other programs still receive it.
 The
 .Fl r
 flag indicates this key may repeat, see the

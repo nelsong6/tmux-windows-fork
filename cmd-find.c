@@ -118,7 +118,7 @@ cmd_find_best_client(struct session *s)
 {
 	struct client	*c_loop, *c;
 
-	if (s->attached == 0)
+	if (s != NULL && s->attached == 0)
 		s = NULL;
 
 	c = NULL;
