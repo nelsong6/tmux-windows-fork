@@ -359,25 +359,65 @@ session_attach(struct session *s, struct window *w, int idx, char **cause)
 	return (wl);
 }
 
+/*
+ * Open the keep-alive-window in a session that has just lost its last window.
+ * A keep-alive window whose program ended within a second of opening is not
+ * replaced, so a shell that cannot start does not respawn forever.
+ */
+static int
+session_keep_alive(struct session *s, struct window *gone)
+{
+	struct spawn_context	 sc = { 0 };
+	struct timeval		 now, age;
+	const char		*name;
+	char			*cause;
+
+	name = options_get_string(s->options, "keep-alive-window");
+	if (*name == '\0')
+		return (0);
+	if ((gone->flags & WINDOW_KEEPALIVE) && TAILQ_EMPTY(&gone->panes)) {
+		gettimeofday(&now, NULL);
+		timersub(&now, &gone->creation_time, &age);
+		if (age.tv_sec < 1)
+			return (0);
+	}
+
+	s->curw = NULL;
+	sc.s = s;
+	sc.name = name;
+	sc.idx = -1;
+	if (spawn_window(&sc, &cause) == NULL) {
+		log_debug("%s: %s", __func__, cause);
+		free(cause);
+		return (0);
+	}
+	sc.wl->window->flags |= WINDOW_KEEPALIVE;
+	return (1);
+}
+
 /* Detach a window from a session. */
 int
 session_detach(struct session *s, struct winlink *wl)
 {
+	struct window	*w = wl->window;
+	int		 empty;
+
 	if (s->curw == wl &&
 	    session_last(s) != 0 &&
 	    session_previous(s, 0) != 0)
 		session_next(s, 0);
 
 	wl->flags &= ~WINLINK_ALERTFLAGS;
-	notify_session_window("window-unlinked", s, wl->window);
+	notify_session_window("window-unlinked", s, w);
 	winlink_stack_remove(&s->lastw, wl);
+	window_add_ref(w, __func__);
 	winlink_remove(&s->windows, wl);
 
-	session_group_synchronize_from(s);
+	empty = RB_EMPTY(&s->windows) && !session_keep_alive(s, w);
+	window_remove_ref(w, __func__);
 
-	if (RB_EMPTY(&s->windows))
-		return (1);
-	return (0);
+	session_group_synchronize_from(s);
+	return (empty);
 }
 
 /* Return if session has window. */
