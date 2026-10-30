@@ -153,12 +153,9 @@ if [ -n "$CI" ]; then
 		wait_until ctl_has '^global='
 	) | $TMUX -C attach -tctrl >$CTL 2>&1 &
 	wait_until ctl_has '^attached$' || fail "global: no client: $(cat $CTL)"
-	powershell.exe -NoProfile -Command '
-		Add-Type -Name K -Namespace W -MemberDefinition "[DllImport(\"user32.dll\")] public static extern void keybd_event(byte vk, byte scan, uint flags, System.UIntPtr extra);"
-		[W.K]::keybd_event(0x5B, 0, 0, [UIntPtr]::Zero)
-		[W.K]::keybd_event(0xC0, 0, 0, [UIntPtr]::Zero)
-		[W.K]::keybd_event(0xC0, 0, 2, [UIntPtr]::Zero)
-		[W.K]::keybd_event(0x5B, 0, 2, [UIntPtr]::Zero)'
+	PRESS=$(powershell.exe -NoProfile -ExecutionPolicy Bypass \
+	    -File "$(dirname "$0")/win32-press.ps1" | tr -d '\r')
+	echo "press: $PRESS"
 	wait_until ctl_has '^global=' || fail "global: no reply: $(cat $CTL)"
 	ctl_has '^global=pressed$' || \
 		fail "global: Win+\` didn't run the binding: $(cat $CTL)"
