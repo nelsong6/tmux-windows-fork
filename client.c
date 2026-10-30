@@ -539,6 +539,24 @@ client_main(struct event_base *base, int argc, char **argv, uint64_t flags,
 }
 
 /* Send identify messages to server. */
+#ifdef _WIN32
+/*
+ * Send the client's console size. The server is a detached process with no
+ * console, so it cannot detect the client's terminal dimensions on its own.
+ */
+static void
+client_send_resize(void)
+{
+	struct msg_resize_data	rd;
+	int			cols = 80, rows = 24;
+
+	win32_tty_get_size(&cols, &rows);
+	rd.sx = cols;
+	rd.sy = rows;
+	proc_send(client_peer, MSG_RESIZE, -1, &rd, sizeof rd);
+}
+#endif
+
 static void
 client_send_identify(const char *ttynam, const char *termname, char **caps,
     u_int ncaps, const char *cwd, int feat)
@@ -613,20 +631,7 @@ client_send_identify(const char *ttynam, const char *termname, char **caps,
 	proc_send(client_peer, MSG_IDENTIFY_DONE, -1, NULL, 0);
 
 #ifdef _WIN32
-	/*
-	 * Send initial window size from the client's console. The server
-	 * is a detached process with no console, so it cannot detect the
-	 * client's terminal dimensions on its own.
-	 */
-	{
-		struct msg_resize_data	rd;
-		int			cols = 80, rows = 24;
-
-		win32_tty_get_size(&cols, &rows);
-		rd.sx = cols;
-		rd.sy = rows;
-		proc_send(client_peer, MSG_RESIZE, -1, &rd, sizeof rd);
-	}
+	client_send_resize();
 #endif
 }
 
@@ -807,16 +812,7 @@ client_signal(int sig)
 			break;
 		case SIGWINCH:
 #ifdef _WIN32
-			{
-				struct msg_resize_data	rd;
-				int			cols = 80, rows = 24;
-
-				win32_tty_get_size(&cols, &rows);
-				rd.sx = cols;
-				rd.sy = rows;
-				proc_send(client_peer, MSG_RESIZE, -1,
-				    &rd, sizeof rd);
-			}
+			client_send_resize();
 #else
 			proc_send(client_peer, MSG_RESIZE, -1, NULL, 0);
 #endif
@@ -931,8 +927,14 @@ client_dispatch_wait(struct imsg *imsg)
 		client_attached = 1;
 #ifdef _WIN32
 		client_start_tty_relay();
-#endif
+		/*
+		 * A resize seen before now was dropped (not attached yet), so
+		 * send the size the console has now.
+		 */
+		client_send_resize();
+#else
 		proc_send(client_peer, MSG_RESIZE, -1, NULL, 0);
+#endif
 		break;
 	case MSG_VERSION:
 		if (datalen != 0)
