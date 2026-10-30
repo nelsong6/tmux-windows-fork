@@ -41,8 +41,12 @@ win32_tty_raw_mode(void)
 	/* Input: enable VT input, disable line input and echo. */
 	in_mode = ENABLE_VIRTUAL_TERMINAL_INPUT;
 
-	/* Output: enable VT processing and disable auto newlines. */
+	/*
+	 * Output: enable VT processing and autowrap, which tmux relies on to
+	 * draw a row a pane wrapped, and disable auto newlines.
+	 */
 	out_mode = ENABLE_PROCESSED_OUTPUT |
+	    ENABLE_WRAP_AT_EOL_OUTPUT |
 	    ENABLE_VIRTUAL_TERMINAL_PROCESSING |
 	    DISABLE_NEWLINE_AUTO_RETURN;
 
