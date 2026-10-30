@@ -114,10 +114,8 @@ tty_init(struct tty *tty, struct client *c)
 	tty->ccolour = -1;
 	tty->fg = tty->bg = -1;
 
-#ifndef _WIN32
 	if (tcgetattr(c->fd, &tty->tio) != 0)
 		return (-1);
-#endif
 	return (0);
 }
 

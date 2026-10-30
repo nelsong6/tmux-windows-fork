@@ -159,6 +159,27 @@ wait_for keys "^MOD_OK" || {
 }
 echo "PASS 12: Modifier combinations"
 
+# --- Test 13: an attached client's Backspace and Delete edit the prompt ---
+# send-keys skips the client's key parser, so a real client runs in the
+# keys pane and the pane feeds it the bytes a console sends: DEL for
+# Backspace, ESC [3~ for Delete.
+INNER="$TEST_TMUX -Ltest-inner"
+$INNER kill-server 2>/dev/null
+trap "rm -f $CFG; $TMUX kill-server 2>/dev/null; $INNER kill-server 2>/dev/null" 0 1 15
+$INNER -f "$CFG" new -d -sinner -x 80 -y 20 < /dev/null || exit 1
+$TMUX send-keys -tkeys "set TMUX=" Enter \
+    "\"$(cygpath -w "$TEST_TMUX")\" -f \"$(cygpath -w "$CFG")\" -Ltest-inner attach -tinner" Enter
+wait_until [ "$($INNER list-clients 2>/dev/null)" != "" ] ||
+	fail "inner client never attached"
+$TMUX send-keys -tkeys C-b :
+wait_for keys "^: *$" || fail "prompt never opened"
+$TMUX send-keys -tkeys "abcX" BSpace "deY" Left DC
+wait_for keys "^:abcde *$" ||
+	fail "prompt edit gave: $($TMUX capture-pane -tkeys -p | tr -d '\r' | grep '^:' | cat -v)"
+$TMUX send-keys -tkeys Escape
+$INNER kill-server 2>/dev/null
+echo "PASS 13: prompt Backspace and Delete from a client"
+
 $TMUX kill-server 2>/dev/null
 
 if [ $FAIL -eq 0 ]; then
