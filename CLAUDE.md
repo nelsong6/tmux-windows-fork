@@ -37,13 +37,14 @@ TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-basic.sh
 
 ## Test Suite
 
-CI runs 12 test scripts from `regress/`:
+CI runs 13 test scripts from `regress/`:
 - `win32-basic.sh` — core session/window/pane operations
 - `win32-claude-swarm.sh` — multi-session concurrent usage
 - `win32-format-strings.sh` — `#{...}` format engine (171 assertions)
 - `win32-conf-syntax.sh` — config file parsing (21 files)
 - `win32-keys.sh` — key handling (13 tests, tests effects not raw codes)
 - `win32-has-session.sh` — exit code validation
+- `win32-file.sh` — `source-file`, `load-buffer` and `save-buffer` from a second client finish, keep the bytes, and fail with exit 1
 - `win32-layout.sh` — pane dimension verification (7 tests)
 - `win32-control-client.sh` — complex pane operations, and a `-C` client's replies, subscriptions and exit (9 tests)
 - `win32-attach-size.sh` — a client attaches at its console's size when the console is resized between identify and attach (runs the client in a pseudo-console via `win32-pty.ps1`)
@@ -111,7 +112,7 @@ Do **not** add a trailing blank line to manifest YAML files. Earlier versions (3
 
 ## Known Quirks
 
-- `source -n` hangs as a separate client on Windows (file-read protocol blocks); plain `source-file` from a second client against a live server hung too (2026-10-24)
+- A second client reads and writes files for the server synchronously (`file.c`, `_WIN32`): libevent's bufferevent never fires on a file descriptor that isn't a socket, so `source-file`, `load-buffer` and `save-buffer` from a second client hung until HOMECFG-44. The read happens in the client, so a newer client fixes it against an older server
 - Command-line arguments arrive in the ANSI code page (no `wmain`/UTF-8 manifest), so non-ASCII in argv is mangled: `display -p '#{s/✳/*/:pane_title}'` inserted `*` between every byte. Put non-ASCII formats in a config file
 - `default-shell` with forward slashes (`C:/WINDOWS/system32/cmd.exe`) leaves the first pane dead and the server exits; use backslashes
 - A server started from Git Bash passes ignoring Ctrl-C on to its panes (issue 6), so the tests can't exercise Ctrl-C
