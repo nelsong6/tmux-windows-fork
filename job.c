@@ -87,12 +87,15 @@ job_close_fd(int fd)
 #endif
 }
 
-/* Start a job running. */
+/*
+ * Start a job running. A JOB_PTY job's standard input and output are the pty
+ * unless infd or outfd is given (-1 for none).
+ */
 struct job *
 job_run(const char *cmd, int argc, char **argv, struct environ *e,
     struct session *s, const char *cwd, job_update_cb updatecb,
     job_complete_cb completecb, job_free_cb freecb, void *data, int flags,
-    int sx, int sy)
+    int sx, int sy, int infd, int outfd)
 {
 	struct job	 *job;
 	struct environ	 *env;
@@ -150,9 +153,10 @@ job_run(const char *cmd, int argc, char **argv, struct environ *e,
 			xasprintf(&cmdline, "\"%s\" %s %s", shell,
 			    win32_shell_command_flag(shell), cmd);
 		else
-			cmdline = cmd_stringify_argv(argc, argv);
+			cmdline = win32_argv_to_cmdline(argc, argv);
 		envblock = environ_to_win32_block(env);
-		pty = win32_pty_spawn(cmdline, cwd, envblock, sx, sy, &pid);
+		pty = win32_pty_spawn(cmdline, cwd, envblock, sx, sy, &pid,
+		    infd, outfd);
 		free(envblock);
 		free(cmdline);
 		if (pty == NULL)
@@ -164,7 +168,7 @@ job_run(const char *cmd, int argc, char **argv, struct environ *e,
 			xasprintf(&cmdline, "\"%s\" %s %s", shell,
 			    win32_shell_command_flag(shell), cmd);
 		else
-			cmdline = cmd_stringify_argv(argc, argv);
+			cmdline = win32_argv_to_cmdline(argc, argv);
 		pid = win32_process_spawn(cmdline, cwd, out[1]);
 		free(cmdline);
 		if (pid == -1) {
@@ -266,6 +270,11 @@ job_run(const char *cmd, int argc, char **argv, struct environ *e,
 			if (do_close)
 				close(out[1]);
 			close(out[0]);
+		} else {
+			if (infd != -1 && dup2(infd, STDIN_FILENO) == -1)
+				fatal("dup2 failed");
+			if (outfd != -1 && dup2(outfd, STDOUT_FILENO) == -1)
+				fatal("dup2 failed");
 		}
 		closefrom(STDERR_FILENO + 1);
 

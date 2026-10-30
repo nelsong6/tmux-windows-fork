@@ -73,6 +73,57 @@ win32_path_is_absolute(const char *path)
 }
 
 /*
+ * An argument vector as a command line that CommandLineToArgvW and the C
+ * runtime split back into the same arguments: an argument with a space, tab,
+ * newline or quote is quoted, and backslashes are doubled only where they come
+ * before a quote.
+ */
+char *
+win32_argv_to_cmdline(int argc, char **argv)
+{
+	char		*buf;
+	const char	*cp;
+	size_t		 len = 1, off = 0, n;
+	int		 i;
+
+	for (i = 0; i < argc; i++)
+		len += 3 + 2 * strlen(argv[i]);
+	if ((buf = malloc(len)) == NULL)
+		return (NULL);
+
+	for (i = 0; i < argc; i++) {
+		if (i != 0)
+			buf[off++] = ' ';
+		if (*argv[i] != '\0' && strpbrk(argv[i], " \t\n\v\"") == NULL) {
+			memcpy(buf + off, argv[i], strlen(argv[i]));
+			off += strlen(argv[i]);
+			continue;
+		}
+		buf[off++] = '"';
+		for (cp = argv[i]; /* nothing */; cp++) {
+			for (n = 0; *cp == '\\'; cp++)
+				n++;
+			if (*cp == '\0') {
+				memset(buf + off, '\\', 2 * n);
+				off += 2 * n;
+				break;
+			}
+			if (*cp == '"') {
+				memset(buf + off, '\\', 2 * n + 1);
+				off += 2 * n + 1;
+			} else {
+				memset(buf + off, '\\', n);
+				off += n;
+			}
+			buf[off++] = *cp;
+		}
+		buf[off++] = '"';
+	}
+	buf[off] = '\0';
+	return (buf);
+}
+
+/*
  * cmd.exe takes /c before a command; pwsh, powershell and Unix-style shells
  * take -c (pwsh rejects /c).
  */

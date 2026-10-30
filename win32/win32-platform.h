@@ -641,6 +641,7 @@ int win32_path_is_absolute(const char *path);
 
 /* The flag a shell takes before a command: /c for cmd.exe, -c otherwise. */
 const char *win32_shell_command_flag(const char *shell);
+char *win32_argv_to_cmdline(int argc, char **argv);
 
 /* closefrom. */
 void win32_closefrom(int lowfd);
@@ -885,7 +886,7 @@ static inline void win32_wsa_init(void) {
 /* win32-pty.c */
 struct win32_pty;
 struct win32_pty *win32_pty_spawn(const char *cmd, const char *cwd,
-    char *env, int cols, int rows, pid_t *pid);
+    char *env, int cols, int rows, pid_t *pid, int infd, int outfd);
 int  win32_pty_resize(struct win32_pty *pty, int cols, int rows);
 void win32_pty_hangup(struct win32_pty *pty);
 void win32_pty_close(struct win32_pty *pty);
@@ -893,6 +894,7 @@ int  win32_pty_get_fd(struct win32_pty *pty);
 HANDLE win32_pty_get_process(struct win32_pty *pty);
 
 /* win32-process.c */
+void win32_write_close(int fd, const void *data, size_t len);
 void  win32_process_watch(HANDLE hProcess, pid_t pid);
 void  win32_process_unwatch(pid_t pid);
 void  win32_process_init(void);

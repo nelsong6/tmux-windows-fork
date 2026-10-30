@@ -123,7 +123,7 @@ cmd_if_shell_exec(struct cmd *self, struct cmdq_item *item)
 	if (job_run(shellcmd, 0, NULL, NULL, s,
 	    server_client_get_cwd(cmdq_get_client(item), s), NULL,
 	    cmd_if_shell_callback, cmd_if_shell_free, cdata, 0, -1,
-	    -1) == NULL) {
+	    -1, -1, -1) == NULL) {
 		cmdq_error(item, "failed to run command: %s", shellcmd);
 		free(shellcmd);
 		cmd_if_shell_free(cdata);

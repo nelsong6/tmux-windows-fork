@@ -6971,6 +6971,53 @@ changes the confirmation key to
 .Ar confirm-key ;
 the default is
 .Ql y .
+.It Xo Ic display-palette
+.Op Fl c Ar target-client
+.Op Fl h Ar height
+.Op Fl t Ar target-pane
+.Op Fl w Ar width
+.Ar program Op Ar argument ...
+.Xc
+Display a command palette in a popup on
+.Ar target-client .
+.Ar program
+is run directly, not by a shell, and is given the palette on its standard
+input: a line for each command, alias and key binding in the
+.Ql prefix
+and
+.Ql root
+tables, as a tree of tab-separated fields: the depth, a name, a description,
+a hint and an id.
+A binding that opens a menu or a session, window or buffer chooser is a
+folder of what it offers, at the next depth.
+A row with a hint asks for text, such as the name for
+.Ic rename-window ,
+and the hint says what it is.
+.Pp
+When
+.Ar program
+exits with status zero, its standard output is the id of the pick, followed
+for a row that asks for text by a tab and the text.
+The pick runs as if its key had been pressed, with the text in place of
+the
+.Ql %%
+of its template as
+.Ic command-prompt
+does.
+Nothing runs if
+.Ar program
+exits with another status.
+.Pp
+.Fl w
+and
+.Fl h
+give the width and height of the popup, as for
+.Ic display-popup .
+For example, with fzt:
+.Bd -literal -offset indent
+bind -n C-b display-palette -w 90% -h 80% fzt -tiered \e
+    -accept-nth 4 -input-col 3 -layout reverse
+.Ed
 .Tg menu
 .It Xo Ic display-menu
 .Op Fl OM

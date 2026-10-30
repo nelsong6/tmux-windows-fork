@@ -227,6 +227,59 @@ spawn_bridge_in(LPVOID arg)
 	return (0);
 }
 
+struct write_close {
+	int	 fd;
+	size_t	 len;
+	char	 data[];
+};
+
+static DWORD WINAPI
+write_close_thread(LPVOID arg)
+{
+	struct write_close	*wc = arg;
+	size_t			 off = 0;
+	int			 n;
+
+	while (off < wc->len) {
+		n = _write(wc->fd, wc->data + off, (unsigned int)(wc->len - off));
+		if (n <= 0)
+			break;
+		off += n;
+	}
+	_close(wc->fd);
+	free(wc);
+	return (0);
+}
+
+/*
+ * Write data to a pipe and close it, on a thread of its own: a write to a pipe
+ * blocks once the pipe is full, until the reader catches up, and the reader is
+ * a child the server must keep serving meanwhile. The fd belongs to the thread.
+ */
+void
+win32_write_close(int fd, const void *data, size_t len)
+{
+	struct write_close	*wc;
+	HANDLE			 thread;
+
+	wc = malloc(sizeof *wc + len);
+	if (wc == NULL) {
+		_close(fd);
+		return;
+	}
+	wc->fd = fd;
+	wc->len = len;
+	memcpy(wc->data, data, len);
+
+	thread = CreateThread(NULL, 0, write_close_thread, wc, 0, NULL);
+	if (thread == NULL) {
+		_close(fd);
+		free(wc);
+		return;
+	}
+	CloseHandle(thread);
+}
+
 /*
  * Spawn a non-PTY process with its stdin, stdout and stderr connected to the
  * given socket. The socket then belongs to the bridge, which closes it when
