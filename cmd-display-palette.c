@@ -263,6 +263,24 @@ palette_expand(struct palette *p, const char *fmt)
 	return (format_single_from_state(p->item, fmt, p->tc, p->fs));
 }
 
+/*
+ * Parse commands, or NULL if they don't parse. cmd_parse_from_string's result
+ * is shared by every call, and adding a row can parse again (a run-shell -C
+ * expanded, a menu's items), so the list is taken out of it at once.
+ */
+static struct cmd_list *
+palette_parse(const char *text)
+{
+	struct cmd_parse_result	*pr;
+
+	pr = cmd_parse_from_string(text, NULL);
+	if (pr->status != CMD_PARSE_SUCCESS) {
+		free(pr->error);
+		return (NULL);
+	}
+	return (pr->cmdlist);
+}
+
 /* Remove the #[...] style directives from a name. */
 static void
 palette_strip_styles(char *s)
@@ -317,7 +335,7 @@ palette_menu(struct palette *p, u_int depth, const char *name,
 {
 	const struct cmd_entry	*entry = cmd_get_entry(cmd);
 	struct args		*args = cmd_get_args(cmd);
-	struct cmd_parse_result	*pr;
+	struct cmd_list		*cmdlist;
 	struct paste_buffer	*pb;
 	struct session		*s;
 	const char		*template, *value;
@@ -331,18 +349,16 @@ palette_menu(struct palette *p, u_int depth, const char *name,
 		    strstr(value, "#{") == NULL)
 			return (0);
 		command = palette_expand(p, value);
-		pr = cmd_parse_from_string(command, NULL);
+		cmdlist = palette_parse(command);
 		free(command);
-		if (pr->status != CMD_PARSE_SUCCESS) {
-			free(pr->error);
+		if (cmdlist == NULL)
 			return (0);
-		}
 		found = 0;
-		if (cmd_list_next(cmd_list_first(pr->cmdlist)) == NULL) {
+		if (cmd_list_next(cmd_list_first(cmdlist)) == NULL) {
 			found = palette_menu(p, depth, name, desc,
-			    cmd_list_first(pr->cmdlist));
+			    cmd_list_first(cmdlist));
 		}
-		cmd_list_free(pr->cmdlist);
+		cmd_list_free(cmdlist);
 		return (found);
 	}
 
@@ -377,13 +393,11 @@ palette_menu(struct palette *p, u_int depth, const char *name,
 		}
 		palette_add(p, depth, name, desc, NULL);
 		for (i = 0; i < n; i += 2) {
-			pr = cmd_parse_from_string(items[i + 1], NULL);
-			if (pr->status == CMD_PARSE_SUCCESS) {
+			if ((cmdlist = palette_parse(items[i + 1])) != NULL) {
 				palette_node(p, depth + 1, items[i], "",
-				    pr->cmdlist, items[i + 1], 1);
-				cmd_list_free(pr->cmdlist);
+				    cmdlist, items[i + 1], 1);
+				cmd_list_free(cmdlist);
 			} else {
-				free(pr->error);
 				palette_add_command(p, depth + 1, items[i], "",
 				    items[i + 1]);
 			}
@@ -550,16 +564,14 @@ static void
 palette_node_text(struct palette *p, const char *name, const char *desc,
     const char *text, const char *command)
 {
-	struct cmd_parse_result	*pr;
+	struct cmd_list	*cmdlist;
 
-	pr = cmd_parse_from_string(text, NULL);
-	if (pr->status != CMD_PARSE_SUCCESS) {
-		free(pr->error);
+	if ((cmdlist = palette_parse(text)) == NULL) {
 		palette_add_command(p, 0, name, desc, command);
 		return;
 	}
-	palette_node(p, 0, name, desc, pr->cmdlist, command, 0);
-	cmd_list_free(pr->cmdlist);
+	palette_node(p, 0, name, desc, cmdlist, command, 0);
+	cmd_list_free(cmdlist);
 }
 
 static void
