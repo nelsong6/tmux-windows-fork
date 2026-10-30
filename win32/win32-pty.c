@@ -10,6 +10,7 @@
 #include <string.h>
 
 #include "win32-platform.h"
+#include <event2/buffer.h>
 
 struct win32_pty {
 	HPCON    hPC;        /* ConPTY handle */
@@ -36,6 +37,18 @@ struct pty_api {
 	HRESULT	(WINAPI *create)(COORD, HANDLE, HANDLE, DWORD, HPCON *);
 	HRESULT	(WINAPI *resize)(HPCON, COORD);
 	void	(WINAPI *destroy)(HPCON);
+	HRESULT	(WINAPI *pack)(HANDLE, HANDLE, HANDLE, HPCON *);
+};
+
+/*
+ * What an HPCON from conpty.dll points to (src/winconpty/winconpty.h in
+ * microsoft/terminal). ConptyPackPseudoConsole builds one from these handles
+ * in another process, which is how a console changes hands.
+ */
+struct pty_conpty {
+	HANDLE	signal;
+	HANDLE	reference;
+	HANDLE	process;
 };
 
 static const struct pty_api *
@@ -57,6 +70,7 @@ pty_api(void)
 		api.create = (void *)GetProcAddress(m, "ConptyCreatePseudoConsole");
 		api.resize = (void *)GetProcAddress(m, "ConptyResizePseudoConsole");
 		api.destroy = (void *)GetProcAddress(m, "ConptyClosePseudoConsole");
+		api.pack = (void *)GetProcAddress(m, "ConptyPackPseudoConsole");
 		if (api.create != NULL && api.resize != NULL && api.destroy != NULL)
 			return (&api);
 		FreeLibrary(m);
@@ -64,6 +78,7 @@ pty_api(void)
 	api.create = CreatePseudoConsole;
 	api.resize = ResizePseudoConsole;
 	api.destroy = ClosePseudoConsole;
+	api.pack = NULL;
 	return (&api);
 }
 
@@ -371,4 +386,156 @@ win32_pty_write(struct win32_pty *pty, const void *data, size_t len)
 	if (!WriteFile(pty->hPipeIn, data, (DWORD)len, &written, NULL))
 		return (-1);
 	return (int)written;
+}
+
+/* Start the bridge threads on a new socket pair. */
+static int
+pty_start_bridge(struct win32_pty *pty)
+{
+	int	sv[2];
+
+	if (win32_socketpair(AF_INET, SOCK_STREAM, 0, sv) != 0)
+		return (-1);
+	pty->sock = (SOCKET)sv[0];
+	pty->bridge_peer = (SOCKET)sv[1];
+	pty->closing = 0;
+	pty->bridge_thread = CreateThread(NULL, 0, pty_bridge_thread, pty, 0,
+	    NULL);
+	pty->input_thread = CreateThread(NULL, 0, pty_input_thread, pty, 0,
+	    NULL);
+	if (pty->bridge_thread == NULL || pty->input_thread == NULL)
+		return (-1);
+	return (0);
+}
+
+/*
+ * Stop both bridge threads and leave the console as it is, so another process
+ * can take it over. Input already queued reaches the console first. Output the
+ * bridge already passed on, and any it was reading, is added to out; nothing
+ * the console wrote is lost or read twice.
+ */
+void
+win32_pty_stop(struct win32_pty *pty, struct evbuffer *out)
+{
+	char	buf[4096];
+	int	n;
+	u_long	nonblocking = 1;
+
+	ioctlsocket(pty->sock, FIONBIO, &nonblocking);
+
+	/* The input bridge reads what is left and stops at end of file. */
+	shutdown(pty->sock, SD_SEND);
+	if (pty->input_thread != NULL) {
+		while (WaitForSingleObject(pty->input_thread, 5000) ==
+		    WAIT_TIMEOUT)
+			CancelSynchronousIo(pty->input_thread);
+		CloseHandle(pty->input_thread);
+		pty->input_thread = NULL;
+	}
+
+	/*
+	 * The output bridge is cancelled out of its read; it may be blocked
+	 * sending instead, so keep reading the socket until it has gone and
+	 * closed its end.
+	 */
+	pty->closing = 1;
+	while (pty->bridge_thread != NULL) {
+		while ((n = recv(pty->sock, buf, sizeof buf, 0)) > 0)
+			evbuffer_add(out, buf, n);
+		if (WaitForSingleObject(pty->bridge_thread, 10) ==
+		    WAIT_OBJECT_0) {
+			CloseHandle(pty->bridge_thread);
+			pty->bridge_thread = NULL;
+		} else
+			CancelSynchronousIo(pty->bridge_thread);
+	}
+	for (;;) {
+		n = recv(pty->sock, buf, sizeof buf, 0);
+		if (n > 0)
+			evbuffer_add(out, buf, n);
+		else if (n == 0 || WSAGetLastError() != WSAEWOULDBLOCK)
+			break;
+	}
+	closesocket(pty->sock);
+	pty->sock = INVALID_SOCKET;
+}
+
+/* Restart the bridges after win32_pty_stop. Returns the new socket. */
+int
+win32_pty_resume(struct win32_pty *pty)
+{
+	if (pty_start_bridge(pty) != 0)
+		return (-1);
+	return ((int)pty->sock);
+}
+
+/* Whether consoles can be handed to another process: conpty.dll's can. */
+int
+win32_pty_can_export(void)
+{
+	return (pty_api()->pack != NULL);
+}
+
+/*
+ * Copy the console, its pipes and its process into another process. Only
+ * conpty.dll's consoles can be packed again on the other side.
+ */
+int
+win32_pty_export(struct win32_pty *pty, HANDLE child,
+    struct win32_pty_handoff *h)
+{
+	struct pty_conpty	*pc = (struct pty_conpty *)pty->hPC;
+	HANDLE			 src[6], dst[6];
+	int			 i;
+
+	if (pty_api()->pack == NULL || pc == NULL)
+		return (-1);
+	src[0] = pc->signal;
+	src[1] = pc->reference;
+	src[2] = pc->process;
+	src[3] = pty->hPipeIn;
+	src[4] = pty->hPipeOut;
+	src[5] = pty->hProcess;
+	for (i = 0; i < 6; i++) {
+		if (!DuplicateHandle(GetCurrentProcess(), src[i], child,
+		    &dst[i], 0, FALSE, DUPLICATE_SAME_ACCESS))
+			return (-1);
+	}
+	h->signal = (uint64_t)(uintptr_t)dst[0];
+	h->reference = (uint64_t)(uintptr_t)dst[1];
+	h->conhost = (uint64_t)(uintptr_t)dst[2];
+	h->in = (uint64_t)(uintptr_t)dst[3];
+	h->out = (uint64_t)(uintptr_t)dst[4];
+	h->process = (uint64_t)(uintptr_t)dst[5];
+	h->pid = pty->dwProcessId;
+	return (0);
+}
+
+/*
+ * Take over a console handed on by win32_pty_export. Nothing reads it until
+ * win32_pty_resume: the old server may still need it.
+ */
+struct win32_pty *
+win32_pty_import(const struct win32_pty_handoff *h)
+{
+	struct win32_pty	*pty;
+
+	if (pty_api()->pack == NULL)
+		return (NULL);
+	pty = calloc(1, sizeof *pty);
+	if (pty == NULL)
+		return (NULL);
+	pty->sock = INVALID_SOCKET;
+	pty->bridge_peer = INVALID_SOCKET;
+	if (FAILED(pty_api()->pack((HANDLE)(uintptr_t)h->conhost,
+	    (HANDLE)(uintptr_t)h->reference, (HANDLE)(uintptr_t)h->signal,
+	    &pty->hPC))) {
+		free(pty);
+		return (NULL);
+	}
+	pty->hPipeIn = (HANDLE)(uintptr_t)h->in;
+	pty->hPipeOut = (HANDLE)(uintptr_t)h->out;
+	pty->hProcess = (HANDLE)(uintptr_t)h->process;
+	pty->dwProcessId = h->pid;
+	return (pty);
 }

@@ -371,10 +371,13 @@ win32_process_spawn(const char *cmd, const char *cwd, int outfd)
 }
 
 /*
- * On a crash, write the faulting call stack to stderr, with function names
- * and lines when the PDB is beside the exe (a RelWithDebInfo or Debug build).
- * Without it the server died silently, with no debugger installed to say where.
+ * On a crash, write the faulting call stack to stderr and the log, with
+ * function names and lines when the PDB is beside the exe (a RelWithDebInfo
+ * or Debug build). Without it the server died silently, with no debugger
+ * installed to say where; a server started detached has no stderr at all.
  */
+void log_debug(const char *, ...);
+
 static LONG WINAPI
 win32_crash_handler(EXCEPTION_POINTERS *ep)
 {
@@ -386,11 +389,15 @@ win32_crash_handler(EXCEPTION_POINTERS *ep)
 	IMAGEHLP_LINE64		 line;
 	DWORD64			 disp64;
 	DWORD			 disp;
+	char			 out[1024];
+	size_t			 len;
 	int			 i;
 
-	fprintf(stderr, "tmux crashed: exception 0x%08lx at %p\n",
+	snprintf(out, sizeof out, "tmux crashed: exception 0x%08lx at %p",
 	    ep->ExceptionRecord->ExceptionCode,
 	    ep->ExceptionRecord->ExceptionAddress);
+	fprintf(stderr, "%s\n", out);
+	log_debug("%s", out);
 	SymSetOptions(SYMOPT_LOAD_LINES | SYMOPT_UNDNAME);
 	SymInitialize(proc, NULL, TRUE);
 
@@ -410,14 +417,17 @@ win32_crash_handler(EXCEPTION_POINTERS *ep)
 		sym->MaxNameLen = 255;
 		memset(&line, 0, sizeof line);
 		line.SizeOfStruct = sizeof line;
-		fprintf(stderr, "  #%d %s", i,
+		len = snprintf(out, sizeof out, "  #%d %s", i,
 		    SymFromAddr(proc, frame.AddrPC.Offset, &disp64, sym) ?
 		    sym->Name : "?");
-		if (SymGetLineFromAddr64(proc, frame.AddrPC.Offset, &disp, &line))
-			fprintf(stderr, " %s:%lu", line.FileName, line.LineNumber);
-		fprintf(stderr, "\n");
+		if (len < sizeof out &&
+		    SymGetLineFromAddr64(proc, frame.AddrPC.Offset, &disp, &line))
+			snprintf(out + len, sizeof out - len, " %s:%lu",
+			    line.FileName, line.LineNumber);
+		fprintf(stderr, "%s\n", out);
+		log_debug("%s", out);
 	}
-	fflush(stderr);
+	fflush(NULL);
 	return (EXCEPTION_CONTINUE_SEARCH);
 }
 
@@ -431,10 +441,11 @@ win32_crash_init(void)
 extern char **cfg_files;
 extern unsigned int cfg_nfiles;
 extern int cfg_quiet;
+int log_get_level(void);
 
 /*
  * Launch a detached tmux server process.
- * Runs: tmux.exe -D -S "<label>" [-f "<file>"]...
+ * Runs: tmux.exe [-v...] -D -S "<label>" [-f "<file>"]...
  * The -D flag tells tmux to run as a foreground server (no fork).
  * On Unix the forked server inherits cfg_files; here they must be passed on
  * the command line, or a client's -f files never reach the server. cfg_quiet
@@ -454,7 +465,8 @@ win32_launch_server(const char *label)
 		return;
 
 	len = snprintf(cmdline, sizeof cmdline,
-	    "\"%s\" -D -S \"%s\"", exe, label);
+	    "\"%s\" %s%s-D -S \"%s\"", exe, log_get_level() > 0 ? "-v " : "",
+	    log_get_level() > 1 ? "-v " : "", label);
 	for (i = 0; !cfg_quiet && i < cfg_nfiles && len < sizeof cmdline; i++)
 		len += snprintf(cmdline + len, sizeof cmdline - len,
 		    " -f \"%s\"", cfg_files[i]);

@@ -703,6 +703,14 @@ msgbuf_queuelen(struct msgbuf *msgbuf)
 	return ibufq_queuelen(&msgbuf->bufs);
 }
 
+/* Bytes read but not yet taken as a whole message. */
+size_t
+msgbuf_read_pending(struct msgbuf *msgbuf)
+{
+	return (msgbuf->roff + (msgbuf->rpmsg != NULL) +
+	    ibufq_queuelen(&msgbuf->rbufs));
+}
+
 void
 msgbuf_clear(struct msgbuf *msgbuf)
 {

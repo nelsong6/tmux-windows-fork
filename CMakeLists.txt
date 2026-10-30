@@ -120,6 +120,7 @@ set(TMUX_SOURCES
     cmd-swap-window.c
     cmd-switch-client.c
     cmd-unbind-key.c
+    cmd-upgrade-server.c
     cmd-wait-for.c
     colour.c
     control.c
@@ -159,6 +160,7 @@ set(TMUX_SOURCES
     server-acl.c
     server-client.c
     server-fn.c
+    server-upgrade.c
     session.c
     sort.c
     spawn.c

@@ -74,6 +74,25 @@ struct pending_tty {
 static TAILQ_HEAD(, pending_tty) pending_ttys =
     TAILQ_HEAD_INITIALIZER(pending_ttys);
 
+/* The listening socket, for a server's replacement. */
+int
+server_listen_fd(void)
+{
+	return (server_fd);
+}
+
+/* Tty channels not yet claimed by a client. */
+u_int
+server_pending_ttys(void)
+{
+	struct pending_tty	*pt;
+	u_int			 n = 0;
+
+	TAILQ_FOREACH(pt, &pending_ttys, entry)
+		n++;
+	return (n);
+}
+
 void
 server_add_pending_tty(const char *token, int fd)
 {
@@ -325,6 +344,12 @@ server_start(struct tmuxproc *client, uint64_t flags, struct event_base *base,
 
 #ifdef HAVE_SYSTEMD
 	server_fd = systemd_create_socket(flags, &cause);
+#elif defined(_WIN32)
+	if (getenv("TMUX_UPGRADE") != NULL) {
+		server_fd = server_upgrade_restore();
+		setblocking(server_fd, 0);
+	} else
+		server_fd = server_create_socket(flags, &cause);
 #else
 	server_fd = server_create_socket(flags, &cause);
 #endif

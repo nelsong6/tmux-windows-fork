@@ -147,6 +147,7 @@ dist_tmux_SOURCES = \
 	cmd-swap-window.c \
 	cmd-switch-client.c \
 	cmd-unbind-key.c \
+	cmd-upgrade-server.c \
 	cmd-wait-for.c \
 	cmd.c \
 	colour.c \
@@ -187,6 +188,7 @@ dist_tmux_SOURCES = \
 	server-acl.c \
 	server-client.c \
 	server-fn.c \
+	server-upgrade.c \
 	server.c \
 	session.c \
 	sort.c \

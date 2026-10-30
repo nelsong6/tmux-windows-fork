@@ -1285,3 +1285,151 @@ options_remove_or_default(struct options_entry *o, int idx, char **cause)
 		return (-1);
 	return (0);
 }
+
+#ifdef _WIN32
+/*
+ * Save the options set at this level (not inherited ones) for the server's
+ * replacement. Numbers go as numbers; strings, array items and commands go as
+ * text, which is how they are set.
+ */
+void
+options_upgrade_save(struct evbuffer *evb, struct options *oo)
+{
+	struct evbuffer			*o = evbuffer_new();
+	struct options_entry		*oe;
+	struct options_array_item	*a;
+	char				*s;
+	u_int				 n = 0;
+
+	RB_FOREACH(oe, options_tree, &oo->tree)
+		n++;
+	upw_u32(o, n);
+	RB_FOREACH(oe, options_tree, &oo->tree) {
+		upw_str(o, oe->name);
+		if (OPTIONS_IS_ARRAY(oe)) {
+			upw_u32(o, 3);
+			n = 0;
+			RB_FOREACH(a, options_array, &oe->value.array)
+				n++;
+			upw_u32(o, n);
+			RB_FOREACH(a, options_array, &oe->value.array) {
+				upw_u32(o, a->index);
+				s = options_value_to_string(oe, &a->value, 0);
+				upw_str(o, s);
+				free(s);
+			}
+		} else if (OPTIONS_IS_COMMAND(oe)) {
+			upw_u32(o, 2);
+			s = cmd_list_print(oe->value.cmdlist, 0);
+			upw_str(o, s);
+			free(s);
+		} else if (OPTIONS_IS_NUMBER(oe)) {
+			upw_u32(o, 1);
+			upw_u64(o, (uint64_t)oe->value.number);
+		} else {
+			upw_u32(o, 0);
+			upw_str(o, oe->value.string);
+		}
+	}
+	upw_obj(evb, o);
+	evbuffer_free(o);
+}
+
+static const struct options_table_entry *
+options_upgrade_table_entry(const char *name)
+{
+	const struct options_table_entry	*oe;
+
+	for (oe = options_table; oe->name != NULL; oe++) {
+		if (strcmp(oe->name, name) == 0)
+			return (oe);
+	}
+	return (NULL);
+}
+
+/*
+ * Restore options saved by options_upgrade_save. One the new build no longer
+ * has, or no longer of the same kind, is left out and logged.
+ */
+void
+options_upgrade_restore(struct upgrade_reader *r, struct options *oo)
+{
+	struct upgrade_reader			 o;
+	const struct options_table_entry	*te;
+	struct options_entry			*oe;
+	struct cmd_parse_result			*pr;
+	char					*name, *s, *cause;
+	u_int					 n, i, kind, items, j, idx;
+	uint64_t				 number;
+
+	upr_obj(r, &o);
+	n = upr_u32(&o);
+	for (i = 0; i < n && !o.error; i++) {
+		name = upr_str(&o);
+		kind = upr_u32(&o);
+		te = NULL;
+		if (name != NULL && *name != '@')
+			te = options_upgrade_table_entry(name);
+		if (name == NULL || (*name != '@' && te == NULL)) {
+			log_debug("%s: dropping %s", __func__, name);
+			te = NULL;
+		}
+		switch (kind) {
+		case 3:
+			items = upr_u32(&o);
+			oe = NULL;
+			if (te != NULL && (te->flags & OPTIONS_TABLE_IS_ARRAY)) {
+				oe = options_get_only(oo, name);
+				if (oe == NULL)
+					oe = options_empty(oo, te);
+				else
+					options_array_clear(oe);
+			}
+			for (j = 0; j < items && !o.error; j++) {
+				idx = upr_u32(&o);
+				s = upr_str(&o);
+				if (oe != NULL && s != NULL &&
+				    options_array_set(oe, idx, s, 0,
+				    &cause) != 0) {
+					log_debug("%s: %s[%u]: %s", __func__,
+					    name, idx, cause);
+					free(cause);
+				}
+				free(s);
+			}
+			break;
+		case 2:
+			s = upr_str(&o);
+			if (te != NULL && te->type == OPTIONS_TABLE_COMMAND &&
+			    (~te->flags & OPTIONS_TABLE_IS_ARRAY) && s != NULL) {
+				pr = cmd_parse_from_string(s, NULL);
+				if (pr->status == CMD_PARSE_SUCCESS)
+					options_set_command(oo, name, pr->cmdlist);
+				else
+					free(pr->error);
+			}
+			free(s);
+			break;
+		case 1:
+			number = upr_u64(&o);
+			if (te != NULL && te->type != OPTIONS_TABLE_STRING &&
+			    te->type != OPTIONS_TABLE_COMMAND &&
+			    (~te->flags & OPTIONS_TABLE_IS_ARRAY))
+				options_set_number(oo, name, (long long)number);
+			break;
+		default:
+			s = upr_str(&o);
+			if (s != NULL && name != NULL && (*name == '@' ||
+			    (te != NULL &&
+			    te->type == OPTIONS_TABLE_STRING &&
+			    (~te->flags & OPTIONS_TABLE_IS_ARRAY))))
+				options_set_string(oo, name, 0, "%s", s);
+			free(s);
+			break;
+		}
+		free(name);
+	}
+	if (o.error)
+		r->error = 1;
+}
+#endif

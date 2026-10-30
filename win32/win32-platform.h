@@ -892,6 +892,24 @@ void win32_pty_hangup(struct win32_pty *pty);
 void win32_pty_close(struct win32_pty *pty);
 int  win32_pty_get_fd(struct win32_pty *pty);
 HANDLE win32_pty_get_process(struct win32_pty *pty);
+int  win32_pty_write(struct win32_pty *pty, const void *data, size_t len);
+/* A console handed to a server's replacement: handle values in that process. */
+struct win32_pty_handoff {
+	uint64_t	signal;
+	uint64_t	reference;
+	uint64_t	conhost;
+	uint64_t	in;
+	uint64_t	out;
+	uint64_t	process;
+	uint32_t	pid;
+};
+struct evbuffer;
+void win32_pty_stop(struct win32_pty *pty, struct evbuffer *out);
+int  win32_pty_resume(struct win32_pty *pty);
+int  win32_pty_can_export(void);
+int  win32_pty_export(struct win32_pty *pty, HANDLE child,
+    struct win32_pty_handoff *h);
+struct win32_pty *win32_pty_import(const struct win32_pty_handoff *h);
 
 /* win32-process.c */
 void win32_write_close(int fd, const void *data, size_t len);
@@ -910,6 +928,13 @@ int  win32_ipc_connect_tty(const char *label, const char *tty_token);
 int  win32_ipc_verify_auth(int fd, const char *label, char *tty_token_out,
 	 size_t tty_token_size);
 void win32_ipc_cleanup(const char *label);
+int  win32_ipc_export(HANDLE child, uint64_t *pipe, uint16_t *port,
+    char **nonces);
+int  win32_ipc_import(const char *label, uint64_t pipe, uint16_t port,
+    const char *nonces);
+void win32_ipc_resume(void);
+int  win32_socket_export(int fd, DWORD pid, WSAPROTOCOL_INFOW *info);
+int  win32_socket_import(const WSAPROTOCOL_INFOW *info);
 void win32_generate_tty_token(char *buf, size_t bufsize);
 
 /* win32-signal.c */

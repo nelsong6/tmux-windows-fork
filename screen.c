@@ -750,6 +750,8 @@ screen_mode_to_string(int mode)
 		strlcat(tmp, "CURSOR_BLINKING,", sizeof tmp);
 	if (mode & MODE_CURSOR_VERY_VISIBLE)
 		strlcat(tmp, "CURSOR_VERY_VISIBLE,", sizeof tmp);
+	if (mode & MODE_CURSOR_BLINKING_SET)
+		strlcat(tmp, "CURSOR_BLINKING_SET,", sizeof tmp);
 	if (mode & MODE_MOUSE_UTF8)
 		strlcat(tmp, "MOUSE_UTF8,", sizeof tmp);
 	if (mode & MODE_MOUSE_SGR)
@@ -770,6 +772,10 @@ screen_mode_to_string(int mode)
 		strlcat(tmp, "KEYS_EXTENDED_2,", sizeof tmp);
 	if (mode & MODE_THEME_UPDATES)
 		strlcat(tmp, "THEME_UPDATES,", sizeof tmp);
+	if (mode & MODE_SYNC)
+		strlcat(tmp, "SYNC,", sizeof tmp);
+	if (*tmp == '\0')
+		return ("UNKNOWN");
 	tmp[strlen(tmp) - 1] = '\0';
 	return (tmp);
 }

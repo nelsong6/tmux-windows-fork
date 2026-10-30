@@ -121,6 +121,7 @@ void		 msgbuf_free(struct msgbuf *);
 void		 msgbuf_clear(struct msgbuf *);
 void		 msgbuf_concat(struct msgbuf *, struct ibufqueue *);
 uint32_t	 msgbuf_queuelen(struct msgbuf *);
+size_t		 msgbuf_read_pending(struct msgbuf *);
 int		 ibuf_write(int, struct msgbuf *);
 int		 msgbuf_write(int, struct msgbuf *);
 int		 ibuf_read(int, struct msgbuf *);

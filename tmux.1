@@ -1734,6 +1734,21 @@ running a menu if Ctrl+A comes first:
 bind-key -n C-t switch-client -Tctrl-t -H -R new-window
 bind-key -Tctrl-t C-a new-window menu
 .Ed
+.It Ic upgrade-server Ar tmux-path
+(Windows only.)
+Move the server to the build at
+.Ar tmux-path
+without restarting anything in it.
+The server waits until nothing is in flight (no popup, menu, prompt, pane in
+a mode, piped pane, running job or client part-way through a command), then
+starts the new build and hands it every pane's console and process, every
+screen and its history, all sessions, windows, options, key bindings and
+buffers, and every client's connection.
+The old server exits once the new one has taken everything over; if the new
+one fails, the old one carries on.
+The
+.Ic server_upgrade
+format shows whether the server is waiting and why, or why it failed.
 .El
 .Sh WINDOWS AND PANES
 Each window displayed by
@@ -6352,6 +6367,7 @@ The following variables are available, where appropriate:
 .It Li "selection_start_x" Ta "" Ta "X position of the start of the selection"
 .It Li "selection_start_y" Ta "" Ta "Y position of the start of the selection"
 .It Li "server_sessions" Ta "" Ta "Number of sessions"
+.It Li "server_upgrade" Ta "" Ta "Waiting or failed upgrade-server, or empty"
 .It Li "session_active" Ta "" Ta "1 if session active"
 .It Li "session_activity" Ta "" Ta "Time of session last activity"
 .It Li "session_activity_flag" Ta "" Ta "1 if any window in session has activity"
