@@ -4733,6 +4733,16 @@ Set the default key table to
 .Ar key-table
 instead of
 .Em root .
+.It Ic keep-alive-window Ar name
+When the session's last window closes, by any means other than
+.Ic kill-session
+or
+.Ic kill-server ,
+open a window named
+.Ar name
+running the default command in its place, so the session is not destroyed.
+A window opened this way whose program exits within a second is not replaced.
+If empty (the default), the session is destroyed as usual.
 .It Ic lock-after-time Ar number
 Lock the session (like the
 .Ic lock-session
