@@ -79,6 +79,9 @@ $TMUX bind -T root F12 display -p f12-bound
 $TMUX set-buffer -b upbuf "buffer kept"
 # As a server upgraded by an affected build carries it in its state.
 $TMUX setenv -g TMUX_UPGRADE 1,2
+# A variable removed from the global environment, and one added to it.
+$TMUX setenv -g -u USERNAME
+$TMUX setenv -g UPG_ADDED kept
 
 # A real client, attached from a pane of the outer server.
 $OUTER -f "$CFG" new -d -sout -x 100 -y 32 < /dev/null || exit 1
@@ -120,15 +123,23 @@ $OUTER send-keys -tout -H 1b 5b 49
 wait_until client_focused || fail "focus-in lost after the upgrade"
 echo "PASS 1: upgrade keeps panes, screens, options, buffers, keys and client, with focus reports on"
 
-# --- Test 1b: the handover variable does not reach the server's panes ---
+# --- Test 1b: the environment is the one before, less TMUX_UPGRADE ---
 $TMUX show-environment -g TMUX_UPGRADE >/dev/null 2>&1 &&
 	fail "TMUX_UPGRADE in the global environment"
+$TMUX show-environment -g USERNAME >/dev/null 2>&1 &&
+	fail "a removed variable came back"
+[ "$($TMUX show-environment -g UPG_ADDED | tr -d '\r')" = UPG_ADDED=kept ] ||
+	fail "an added variable lost"
 $TMUX neww -tup -n envcheck < /dev/null
 wait_ready up:envcheck
-$TMUX send-keys -tup:envcheck     "if defined TMUX_UPGRADE (echo UPG_SET) else (echo UPG_UNSET)" Enter
+$TMUX send-keys -tup:envcheck \
+    "if defined TMUX_UPGRADE (echo UPG_SET) else (echo UPG_UNSET)" Enter
 wait_for up:envcheck "^UPG_UNSET" || fail "a new pane inherits TMUX_UPGRADE"
+$TMUX send-keys -tup:envcheck \
+    "if defined USERNAME (echo USER_SET) else (echo USER_UNSET)" Enter
+wait_for up:envcheck "^USER_UNSET" || fail "a new pane has a removed variable"
 $TMUX kill-window -tup:envcheck
-echo "PASS 1b: a new pane has no TMUX_UPGRADE"
+echo "PASS 1b: the global environment and a new pane's are as before the upgrade"
 
 # --- Test 2: the panes and the client work after the upgrade ---
 $TMUX send-keys -tup:0.0 "echo AFTER_MARK" Enter
