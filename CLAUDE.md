@@ -37,7 +37,7 @@ TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-basic.sh
 
 ## Test Suite
 
-CI runs 8 test scripts from `regress/`:
+CI runs 9 test scripts from `regress/`:
 - `win32-basic.sh` — core session/window/pane operations
 - `win32-claude-swarm.sh` — multi-session concurrent usage
 - `win32-format-strings.sh` — `#{...}` format engine (171 assertions)
@@ -46,6 +46,7 @@ CI runs 8 test scripts from `regress/`:
 - `win32-has-session.sh` — exit code validation
 - `win32-layout.sh` — pane dimension verification (7 tests)
 - `win32-control-client.sh` — complex pane operations, and a `-C` client's replies, subscriptions and exit (9 tests)
+- `win32-attach-size.sh` — a client attaches at its console's size when the console is resized between identify and attach (runs the client in a pseudo-console via `win32-pty.ps1`)
 
 They wait with `regress/win32-wait.sh` (poll until a condition holds, fail after 10 s), not fixed sleeps. Match a command's output with `^`: the typed command line holds the same text.
 
