@@ -37,7 +37,7 @@ TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-basic.sh
 
 ## Test Suite
 
-CI runs 10 test scripts from `regress/`:
+CI runs 11 test scripts from `regress/`:
 - `win32-basic.sh` — core session/window/pane operations
 - `win32-claude-swarm.sh` — multi-session concurrent usage
 - `win32-format-strings.sh` — `#{...}` format engine (171 assertions)
@@ -48,12 +48,13 @@ CI runs 10 test scripts from `regress/`:
 - `win32-control-client.sh` — complex pane operations, and a `-C` client's replies, subscriptions and exit (9 tests)
 - `win32-attach-size.sh` — a client attaches at its console's size when the console is resized between identify and attach (runs the client in a pseudo-console via `win32-pty.ps1`)
 - `win32-wrap.sh` — a row a pane wrapped reaches the client's console whole (the client runs in a pane of a second server, whose copy shows what it drew)
+- `win32-upgrade.sh` — `upgrade-server` hands a server with an attached client to another process without restarting its panes, waits while copy mode is open, and carries on when the new build fails (5 tests; runs beside `conpty.dll`)
 
 They wait with `regress/win32-wait.sh` (poll until a condition holds, fail after 10 s), not fixed sleeps. Match a command's output with `^`: the typed command line holds the same text.
 
 ## Publishing
 
-`publish.ps1` waits for the commit's CI run, downloads its `tmux-windows` package (Release `tmux.exe` with `conpty.dll` and `OpenConsole.exe`) and publishes it as `tmux` to `\\NelsonNAS\tools`. Run it after every merge.
+`publish.ps1` waits for the commit's CI run, downloads its `tmux-windows` package (Release `tmux.exe` with `conpty.dll` and `OpenConsole.exe`) and publishes it as `tmux` to `\\NelsonNAS\tools`, then runs `upgrade-server` on every tab server and the spare (`wt*`) and prints each one's result. Run it after every merge.
 
 ## Winget Package Submission
 

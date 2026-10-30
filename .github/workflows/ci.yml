@@ -112,6 +112,22 @@ jobs:
           taskkill //F //IM tmux.exe 2>/dev/null || true
           TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-wrap.sh
 
+      - name: Fetch ConPTY
+        shell: pwsh
+        run: |
+          Invoke-WebRequest "https://www.nuget.org/api/v2/package/Microsoft.Windows.Console.ConPTY/$env:CONPTY_VERSION" -OutFile conpty.zip
+          Expand-Archive conpty.zip conpty
+
+      # A console changes hands only through conpty.dll, so the Debug build
+      # runs here beside it, as a release does.
+      - name: Run upgrade tests
+        shell: bash
+        run: |
+          taskkill //F //IM tmux.exe 2>/dev/null || true
+          mkdir -p build/upgrade
+          cp build/Debug/tmux.exe conpty/runtimes/win-x64/native/conpty.dll conpty/build/native/runtimes/x64/OpenConsole.exe build/upgrade/
+          TEST_TMUX=./build/upgrade/tmux.exe bash regress/win32-upgrade.sh
+
       - name: Upload build artifacts
         if: success()
         uses: actions/upload-artifact@v4
@@ -123,8 +139,6 @@ jobs:
       - name: Package Release with ConPTY
         shell: pwsh
         run: |
-          Invoke-WebRequest "https://www.nuget.org/api/v2/package/Microsoft.Windows.Console.ConPTY/$env:CONPTY_VERSION" -OutFile conpty.zip
-          Expand-Archive conpty.zip conpty
           New-Item -ItemType Directory package | Out-Null
           Copy-Item build/Release/tmux.exe, conpty/runtimes/win-x64/native/conpty.dll, conpty/build/native/runtimes/x64/OpenConsole.exe package/
 

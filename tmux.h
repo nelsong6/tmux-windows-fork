@@ -2349,6 +2349,9 @@ struct tmuxpeer *proc_add_peer(struct tmuxproc *, int,
 void	proc_remove_peer(struct tmuxpeer *);
 void	proc_kill_peer(struct tmuxpeer *);
 void	proc_flush_peer(struct tmuxpeer *);
+#ifdef _WIN32
+int	proc_peer_read_pending(struct tmuxpeer *);
+#endif
 void	proc_toggle_log(struct tmuxproc *);
 pid_t	proc_fork_and_daemon(int *);
 uid_t	proc_get_peer_uid(struct tmuxpeer *);
@@ -3800,5 +3803,67 @@ struct hyperlinks	*hyperlinks_init(void);
 struct hyperlinks	*hyperlinks_copy(struct hyperlinks *);
 void			 hyperlinks_reset(struct hyperlinks *);
 void			 hyperlinks_free(struct hyperlinks *);
+
+#ifdef _WIN32
+/*
+ * server-upgrade.c. The state a server hands to its replacement is a stream of
+ * objects, each length-prefixed so a newer reader sees zeroes for fields an
+ * older writer did not have.
+ */
+struct upgrade_reader {
+	const u_char	*p;
+	size_t		 left;
+	int		 error;
+};
+void		 upw_u32(struct evbuffer *, uint32_t);
+void		 upw_u64(struct evbuffer *, uint64_t);
+void		 upw_str(struct evbuffer *, const char *);
+void		 upw_data(struct evbuffer *, const void *, size_t);
+void		 upw_obj(struct evbuffer *, struct evbuffer *);
+uint32_t	 upr_u32(struct upgrade_reader *);
+uint64_t	 upr_u64(struct upgrade_reader *);
+char		*upr_str(struct upgrade_reader *);
+const void	*upr_data(struct upgrade_reader *, size_t *);
+void		 upr_obj(struct upgrade_reader *, struct upgrade_reader *);
+void		 upw_cell(struct evbuffer *, struct hyperlinks *,
+		     const struct grid_cell *);
+void		 upr_cell(struct upgrade_reader *, struct hyperlinks *,
+		     struct grid_cell *);
+void		 upw_utf8(struct evbuffer *, const struct utf8_data *);
+void		 upr_utf8(struct upgrade_reader *, struct utf8_data *);
+void		 upw_link(struct evbuffer *, struct hyperlinks *, u_int);
+u_int		 upr_link(struct upgrade_reader *, struct hyperlinks *);
+extern int	 server_upgrading;
+int		 server_upgrade_request(const char *, char **);
+const char	*server_upgrade_status(void);
+int		 server_upgrade_restore(void);
+
+/* Each module saves and restores the state only it can see. */
+void		 grid_upgrade_save(struct evbuffer *, struct grid *,
+		     struct hyperlinks *);
+struct grid	*grid_upgrade_restore(struct upgrade_reader *,
+		     struct hyperlinks *);
+void		 input_upgrade_save(struct evbuffer *, struct input_ctx *,
+		     struct hyperlinks *);
+void		 input_upgrade_restore(struct upgrade_reader *,
+		     struct input_ctx *, struct hyperlinks *);
+void		 input_set_event(struct input_ctx *, struct bufferevent *);
+void		 control_upgrade_save(struct evbuffer *, struct client *);
+void		 control_upgrade_restore(struct upgrade_reader *,
+		     struct client *);
+struct evbuffer	*control_upgrade_output(struct client *);
+int		 server_listen_fd(void);
+u_int		 server_pending_ttys(void);
+void		 paste_upgrade_save(struct evbuffer *);
+void		 paste_upgrade_restore(struct upgrade_reader *);
+void		 options_upgrade_save(struct evbuffer *, struct options *);
+void		 options_upgrade_restore(struct upgrade_reader *,
+		     struct options *);
+void		 window_get_next_ids(u_int *, u_int *);
+void		 window_set_next_ids(u_int, u_int);
+void		 window_pane_upgrade_event(struct window_pane *);
+void		 window_pane_upgrade_feed(struct window_pane *,
+		     struct evbuffer *);
+#endif
 
 #endif /* TMUX_H */

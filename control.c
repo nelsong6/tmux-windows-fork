@@ -1189,3 +1189,58 @@ control_remove_sub(struct client *c, const char *name)
 	if (RB_EMPTY(&cs->subs))
 		evtimer_del(&cs->subs_timer);
 }
+
+#ifdef _WIN32
+/* Save a control client's subscriptions for the server's replacement. */
+void
+control_upgrade_save(struct evbuffer *evb, struct client *c)
+{
+	struct control_state	*cs = c->control_state;
+	struct control_sub	*csub;
+	struct evbuffer		*o = evbuffer_new();
+	u_int			 n = 0;
+
+	RB_FOREACH(csub, control_subs, &cs->subs)
+		n++;
+	upw_u32(o, n);
+	RB_FOREACH(csub, control_subs, &cs->subs) {
+		upw_str(o, csub->name);
+		upw_u32(o, csub->type);
+		upw_u32(o, csub->id);
+		upw_str(o, csub->format);
+	}
+	upw_obj(evb, o);
+	evbuffer_free(o);
+}
+
+/* What is waiting to be written to a control client. */
+struct evbuffer *
+control_upgrade_output(struct client *c)
+{
+	return (bufferevent_get_output(c->control_state->write_event));
+}
+
+/* Restore subscriptions saved by control_upgrade_save. */
+void
+control_upgrade_restore(struct upgrade_reader *r, struct client *c)
+{
+	struct upgrade_reader	 o;
+	char			*name, *format;
+	u_int			 n, i, type, id;
+
+	upr_obj(r, &o);
+	n = upr_u32(&o);
+	for (i = 0; i < n && !o.error; i++) {
+		name = upr_str(&o);
+		type = upr_u32(&o);
+		id = upr_u32(&o);
+		format = upr_str(&o);
+		if (name != NULL && format != NULL && !o.error)
+			control_add_sub(c, name, type, id, format);
+		free(name);
+		free(format);
+	}
+	if (o.error)
+		r->error = 1;
+}
+#endif

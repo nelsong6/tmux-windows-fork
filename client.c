@@ -123,6 +123,10 @@ client_connect(struct event_base *base, const char *path, uint64_t flags)
 #ifdef _WIN32
 	int	fd;
 
+	/* Taking over from a server: it is still there, so don't connect. */
+	if ((flags & CLIENT_NOFORK) && getenv("TMUX_UPGRADE") != NULL)
+		return (server_start(client_proc, flags, base, -1, NULL));
+
 	log_debug("connecting to server label %s", path);
 
 	fd = win32_ipc_connect(path);

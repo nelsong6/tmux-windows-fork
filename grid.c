@@ -1603,3 +1603,143 @@ grid_in_set(struct grid *gd, u_int px, u_int py, const char *set)
 		return (0);
 	return (utf8_cstrhas(set, &gc.data));
 }
+
+#ifdef _WIN32
+/*
+ * Save a grid for the server's replacement: every line's cells as they are
+ * stored, with each extended cell's character and hyperlink written out, since
+ * both are indexes into tables of this process.
+ */
+void
+grid_upgrade_save(struct evbuffer *evb, struct grid *gd,
+    struct hyperlinks *hl)
+{
+	struct evbuffer		*o = evbuffer_new(), *lo;
+	struct grid_line	*gl;
+	struct grid_extd_entry	*gee;
+	struct utf8_data	 ud;
+	u_int			 y, i;
+
+	upw_u32(o, gd->flags);
+	upw_u32(o, gd->sx);
+	upw_u32(o, gd->sy);
+	upw_u32(o, gd->hscrolled);
+	upw_u32(o, gd->hsize);
+	upw_u32(o, gd->hlimit);
+	for (y = 0; y < gd->hsize + gd->sy; y++) {
+		gl = &gd->linedata[y];
+		lo = evbuffer_new();
+		upw_u32(lo, gl->flags);
+		upw_u64(lo, (uint64_t)gl->time);
+		upw_u32(lo, gl->cellused);
+		upw_data(lo, gl->celldata, gl->cellused * sizeof *gl->celldata);
+		upw_u32(lo, gl->extdsize);
+		for (i = 0; i < gl->extdsize; i++) {
+			gee = &gl->extddata[i];
+			if (gee->flags & GRID_FLAG_TAB) {
+				memset(&ud, 0, sizeof ud);
+				ud.width = gee->data;
+			} else
+				utf8_to_data(gee->data, &ud);
+			upw_utf8(lo, &ud);
+			upw_u32(lo, gee->attr);
+			upw_u32(lo, gee->flags);
+			upw_u32(lo, gee->fg);
+			upw_u32(lo, gee->bg);
+			upw_u32(lo, gee->us);
+			upw_link(lo, hl, gee->link);
+		}
+		upw_obj(o, lo);
+		evbuffer_free(lo);
+	}
+	upw_obj(evb, o);
+	evbuffer_free(o);
+}
+
+/* Restore a grid saved by grid_upgrade_save. */
+struct grid *
+grid_upgrade_restore(struct upgrade_reader *r, struct hyperlinks *hl)
+{
+	struct upgrade_reader	 o, lo;
+	struct grid		*gd;
+	struct grid_line	*gl;
+	struct grid_extd_entry	*gee;
+	struct utf8_data	 ud;
+	const void		*data;
+	size_t			 size;
+	u_int			 flags, sx, sy, hscrolled, hsize, hlimit, y, i;
+
+	upr_obj(r, &o);
+	flags = upr_u32(&o);
+	sx = upr_u32(&o);
+	sy = upr_u32(&o);
+	hscrolled = upr_u32(&o);
+	hsize = upr_u32(&o);
+	hlimit = upr_u32(&o);
+	if (o.error || sx == 0 || sy == 0 || hsize > hlimit + sy) {
+		r->error = 1;
+		return (NULL);
+	}
+
+	gd = grid_create(sx, sy, hlimit);
+	gd->flags = flags;
+	gd->hscrolled = hscrolled;
+	gd->hsize = hsize;
+	gd->linedata = xreallocarray(gd->linedata, hsize + sy,
+	    sizeof *gd->linedata);
+	memset(gd->linedata, 0, (hsize + sy) * sizeof *gd->linedata);
+	for (y = 0; y < hsize + sy; y++) {
+		gl = &gd->linedata[y];
+		upr_obj(&o, &lo);
+		gl->flags = upr_u32(&lo);
+		gl->time = (time_t)upr_u64(&lo);
+		gl->cellused = upr_u32(&lo);
+		data = upr_data(&lo, &size);
+		if (size != gl->cellused * sizeof *gl->celldata) {
+			lo.error = 1;
+			gl->cellused = 0;
+		} else if (size != 0) {
+			gl->celldata = xmalloc(size);
+			memcpy(gl->celldata, data, size);
+		}
+		gl->cellsize = gl->cellused;
+		gl->extdsize = upr_u32(&lo);
+		if (gl->extdsize > lo.left)
+			lo.error = 1;
+		else if (gl->extdsize != 0) {
+			gl->extddata = xcalloc(gl->extdsize,
+			    sizeof *gl->extddata);
+		}
+		for (i = 0; !lo.error && i < gl->extdsize; i++) {
+			gee = &gl->extddata[i];
+			upr_utf8(&lo, &ud);
+			gee->attr = upr_u32(&lo);
+			gee->flags = upr_u32(&lo);
+			if (gee->flags & GRID_FLAG_TAB)
+				gee->data = ud.width;
+			else if (utf8_from_data(&ud, &gee->data) != UTF8_DONE)
+				gee->data = utf8_build_one(' ');
+			gee->fg = upr_u32(&lo);
+			gee->bg = upr_u32(&lo);
+			gee->us = upr_u32(&lo);
+			gee->link = upr_link(&lo, hl);
+		}
+		for (i = 0; !lo.error && i < gl->cellused; i++) {
+			if ((gl->celldata[i].flags & GRID_FLAG_EXTENDED) &&
+			    gl->celldata[i].offset >= gl->extdsize)
+				lo.error = 1;
+		}
+		if (lo.error) {
+			r->error = 1;
+			grid_destroy(gd);
+			return (NULL);
+		}
+	}
+	if (o.error) {
+		r->error = 1;
+		grid_destroy(gd);
+		return (NULL);
+	}
+	return (gd);
+}
+#endif

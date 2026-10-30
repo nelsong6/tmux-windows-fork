@@ -3508,3 +3508,142 @@ input_report_current_theme(struct input_ctx *ictx)
 		}
 	}
 }
+
+#ifdef _WIN32
+/* Parser states by name, for the server's replacement. */
+static const struct input_state *input_upgrade_states[] = {
+	&input_state_ground,
+	&input_state_esc_enter,
+	&input_state_esc_intermediate,
+	&input_state_csi_enter,
+	&input_state_csi_parameter,
+	&input_state_csi_intermediate,
+	&input_state_csi_ignore,
+	&input_state_dcs_enter,
+	&input_state_dcs_parameter,
+	&input_state_dcs_intermediate,
+	&input_state_dcs_handler,
+	&input_state_dcs_escape,
+	&input_state_dcs_ignore,
+	&input_state_osc_string,
+	&input_state_apc_string,
+	&input_state_rename_string,
+	&input_state_consume_st
+};
+
+static void
+input_upgrade_save_cell(struct evbuffer *evb, struct input_cell *ic,
+    struct hyperlinks *hl)
+{
+	upw_cell(evb, hl, &ic->cell);
+	upw_u32(evb, ic->set);
+	upw_u32(evb, ic->g0set);
+	upw_u32(evb, ic->g1set);
+}
+
+static void
+input_upgrade_restore_cell(struct upgrade_reader *r, struct input_cell *ic,
+    struct hyperlinks *hl)
+{
+	upr_cell(r, hl, &ic->cell);
+	ic->set = upr_u32(r);
+	ic->g0set = upr_u32(r);
+	ic->g1set = upr_u32(r);
+}
+
+/*
+ * Save the parser mid-sequence if it is: the current attributes, the saved
+ * cursor, and any partial escape sequence, so the next byte the new server
+ * reads continues it.
+ */
+void
+input_upgrade_save(struct evbuffer *evb, struct input_ctx *ictx,
+    struct hyperlinks *hl)
+{
+	struct evbuffer	*o = evbuffer_new();
+
+	input_upgrade_save_cell(o, &ictx->cell, hl);
+	input_upgrade_save_cell(o, &ictx->old_cell, hl);
+	upw_u32(o, ictx->old_cx);
+	upw_u32(o, ictx->old_cy);
+	upw_u32(o, ictx->old_mode);
+	upw_data(o, ictx->interm_buf, ictx->interm_len);
+	upw_data(o, ictx->param_buf, ictx->param_len);
+	upw_data(o, ictx->input_buf, ictx->input_len);
+	upw_u32(o, ictx->input_end);
+	upw_utf8(o, &ictx->utf8data);
+	upw_u32(o, ictx->utf8started);
+	upw_u32(o, ictx->ch);
+	upw_utf8(o, &ictx->last);
+	upw_str(o, ictx->state->name);
+	upw_u32(o, ictx->flags);
+	upw_obj(evb, o);
+	evbuffer_free(o);
+}
+
+/* Restore a parser saved by input_upgrade_save. */
+void
+input_upgrade_restore(struct upgrade_reader *r, struct input_ctx *ictx,
+    struct hyperlinks *hl)
+{
+	struct upgrade_reader	 o;
+	const void		*data;
+	size_t			 size;
+	char			*name;
+	u_int			 i;
+
+	upr_obj(r, &o);
+	input_upgrade_restore_cell(&o, &ictx->cell, hl);
+	input_upgrade_restore_cell(&o, &ictx->old_cell, hl);
+	ictx->old_cx = upr_u32(&o);
+	ictx->old_cy = upr_u32(&o);
+	ictx->old_mode = upr_u32(&o);
+
+	data = upr_data(&o, &size);
+	if (size > sizeof ictx->interm_buf)
+		o.error = 1;
+	else {
+		memcpy(ictx->interm_buf, data, size);
+		ictx->interm_len = size;
+	}
+	data = upr_data(&o, &size);
+	if (size > sizeof ictx->param_buf)
+		o.error = 1;
+	else {
+		memcpy(ictx->param_buf, data, size);
+		ictx->param_len = size;
+	}
+	data = upr_data(&o, &size);
+	if (size + 1 > ictx->input_space) {
+		ictx->input_buf = xrealloc(ictx->input_buf, size + 1);
+		ictx->input_space = size + 1;
+	}
+	memcpy(ictx->input_buf, data, size);
+	ictx->input_len = size;
+	ictx->input_buf[size] = '\0';
+	ictx->input_end = upr_u32(&o);
+
+	upr_utf8(&o, &ictx->utf8data);
+	ictx->utf8started = upr_u32(&o);
+	ictx->ch = upr_u32(&o);
+	upr_utf8(&o, &ictx->last);
+
+	name = upr_str(&o);
+	ictx->state = &input_state_ground;
+	for (i = 0; name != NULL && i < nitems(input_upgrade_states); i++) {
+		if (strcmp(input_upgrade_states[i]->name, name) == 0)
+			ictx->state = input_upgrade_states[i];
+	}
+	free(name);
+	ictx->flags = upr_u32(&o);
+	if (o.error)
+		r->error = 1;
+}
+
+/* Point the parser at a pane's new event, keeping its state. */
+void
+input_set_event(struct input_ctx *ictx, struct bufferevent *bev)
+{
+	ictx->event = bev;
+}
+#endif
