@@ -56,7 +56,7 @@ They wait with `regress/win32-wait.sh` (poll until a condition holds, fail after
 
 ## Publishing
 
-`publish.ps1` waits for the commit's CI run, downloads its `tmux-windows` package (Release `tmux.exe` with `conpty.dll` and `OpenConsole.exe`) and publishes it as `tmux` to `\\NelsonNAS\tools`, then runs `upgrade-server` on every tab server and the spare (`wt*`) and prints each one's result. Run it after every merge.
+`publish.ps1` waits for the commit's CI run, downloads its `tmux-windows` package (Release `tmux.exe` with `conpty.dll` and `OpenConsole.exe`) and publishes it as `tmux` to `\\NelsonNAS\tools`, then runs the home profile's `tmux/sync-servers.ps1`, which moves every tab server and the spare (`wt*`) onto the release with `upgrade-server`, sources the config again on each server it moved, and prints each one's result. Run it after every merge.
 
 ## Winget Package Submission
 
