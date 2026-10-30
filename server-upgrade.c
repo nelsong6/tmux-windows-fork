@@ -1743,6 +1743,11 @@ server_upgrade_restore(void)
 	options_upgrade_restore(&r, global_s_options);
 	options_upgrade_restore(&r, global_w_options);
 	upgrade_restore_environ(&r, global_environ);
+	/*
+	 * Taken from this process's environment at startup, or carried in the
+	 * state of a server that kept it: panes must not inherit it.
+	 */
+	environ_unset(global_environ, "TMUX_UPGRADE");
 	upgrade_restore_keys(&r);
 	paste_upgrade_restore(&r);
 	if (r.error) {
