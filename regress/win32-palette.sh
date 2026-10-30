@@ -26,6 +26,10 @@ set -g status off
 bind -n F5 display-palette -w 100% -h 100% "$PS" -NoProfile -ExecutionPolicy Bypass -File "$PICK" -Dir "$(cygpath -m "$OUT")"
 bind -N 'Rename the window' n command-prompt -I'#W' { rename-window -- '%%' }
 bind -n M-w display-menu Split s { split-window } '' "#{?#{==:1,0},Never,}" x { kill-server } Last l { last-window }
+set -g @go-menu 'display-menu -T go "#{session_name}" g "select-window -t first"'
+set -s command-alias[100] 'go-to=run-shell -C "#{E:@go-menu}"'
+set -g @no-menu 'display-menu -T none #{?#{==:1,0},"Never" n "kill-server",}'
+set -s command-alias[101] 'go-nowhere=run-shell -C "#{E:@no-menu}"'
 EOF
 $TMUX -f "$(cygpath -m "$OUT/test.conf")" new -d -x100 -y30 -n first \
     </dev/null || exit 1
@@ -95,6 +99,12 @@ row '^1	Split		' || fail_row "no menu item row" Split
 row '^1	Never	' && fail_row "a hidden menu item was offered" Never
 row '^0	choose-tree	' || fail_row "no choose-tree row" choose-tree
 row '^2	1: second	1 panes	' || fail_row "no window under a session" second
+# An alias that runs a menu through run-shell -C, as move-tab does: its format
+# is expanded and its menu is a folder (building it once crashed the server).
+row '^0	go-to	alias for run-shell' || fail_row "no run-shell -C alias row" go-to
+row '^1	0		' || fail_row "no item in the run-shell -C menu" "^1	0"
+row "^0	go-nowhere	alias for run-shell.*		[0-9]*\$" ||
+    fail_row "no row for a run-shell -C menu with nothing in it" go-nowhere
 
 # A pick that asks for text runs its template with the text, quotes and
 # non-ASCII intact.
