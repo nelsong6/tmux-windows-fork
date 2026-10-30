@@ -106,6 +106,12 @@ jobs:
           taskkill //F //IM tmux.exe 2>/dev/null || true
           TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-attach-size.sh
 
+      - name: Run wrap tests
+        shell: bash
+        run: |
+          taskkill //F //IM tmux.exe 2>/dev/null || true
+          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-wrap.sh
+
       - name: Upload build artifacts
         if: success()
         uses: actions/upload-artifact@v4
