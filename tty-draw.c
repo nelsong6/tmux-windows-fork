@@ -48,14 +48,20 @@ static void
 tty_draw_line_clear(struct tty *tty, u_int px, u_int py, u_int nx,
     const struct grid_cell *defaults, u_int bg, int wrapped)
 {
+	u_int	lsx = tty->sx;
+
 	/* Nothing to clear. */
 	if (nx == 0)
 		return;
 
+	/* A double-size row has half as many columns. */
+	if (tty_get_line_size(tty, py) > 0)
+		lsx /= 2;
+
 	/* If genuine BCE is available, can try escape sequences. */
 	if (!wrapped && nx >= 10 && !tty_fake_bce(tty, defaults, bg)) {
 		/* Off the end of the line, use EL if available. */
-		if (px + nx >= tty->sx && tty_term_has(tty->term, TTYC_EL)) {
+		if (px + nx >= lsx && tty_term_has(tty->term, TTYC_EL)) {
 			tty_cursor(tty, px, py);
 			tty_putcode(tty, TTYC_EL);
 			return;
@@ -119,7 +125,7 @@ tty_draw_line(struct tty *tty, struct screen *s, u_int px, u_int py, u_int nx,
 	struct grid_line	*gl;
 #endif
 	u_int			 i, j, last_i, cx, ex, width;
-	u_int			 cellsize, bg;
+	u_int			 cellsize, bg, lsx;
 	int			 flags, empty, wrapped = 0;
 	char			 buf[1000];
 	size_t			 len;
@@ -131,6 +137,27 @@ tty_draw_line(struct tty *tty, struct screen *s, u_int px, u_int py, u_int nx,
 	 */
 	log_debug("%s: px=%u py=%u nx=%u atx=%u aty=%u", __func__, px, py, nx,
 	    atx, aty);
+
+	/*
+	 * A line drawn across the whole row gives the row its size (double
+	 * width or height, or normal). Anything else drawn on a row needs it
+	 * normal size, so a row shared with another pane or a popup is drawn
+	 * normal size.
+	 */
+	if (atx == px && screen_size_x(s) == tty->sx) {
+		if (px == 0 && nx >= tty->sx) {
+			tty_set_line_size(tty, aty, grid_get_line(gd,
+			    gd->hsize + py)->flags & GRID_LINE_SIZE);
+		}
+	} else if (tty_get_line_size(tty, aty) != 0)
+		tty_set_line_size(tty, aty, 0);
+	if (tty_get_line_size(tty, aty) > 0) {
+		lsx = tty->sx / 2;
+		if (atx >= lsx)
+			return;
+		if (nx > lsx - atx)
+			nx = lsx - atx;
+	}
 
 	/*
 	 * Clamp the width to cellsize - note this is not cellused, because

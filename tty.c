@@ -69,6 +69,7 @@ static void	tty_emulate_repeat(struct tty *, enum tty_code_code,
 		    enum tty_code_code, u_int);
 static void	tty_draw_pane(struct tty *, const struct tty_ctx *, u_int);
 static int	tty_check_overlay(struct tty *, u_int, u_int);
+static void	tty_reset_line_sizes(struct tty *);
 
 #ifdef ENABLE_SIXEL
 static void	tty_write_one(void (*)(struct tty *, const struct tty_ctx *),
@@ -76,7 +77,7 @@ static void	tty_write_one(void (*)(struct tty *, const struct tty_ctx *),
 #endif
 
 #define tty_use_margin(tty) \
-	(tty->term->flags & TERM_DECSLRM)
+	((tty->term->flags & TERM_DECSLRM) && (~tty->flags & TTY_LINESIZED))
 #define tty_full_width(tty, ctx) \
 	((ctx)->xoff == 0 && (ctx)->sx >= (tty)->sx)
 
@@ -176,6 +177,92 @@ tty_set_size(struct tty *tty, u_int sx, u_int sy, u_int xpixel, u_int ypixel)
 	tty->sy = sy;
 	tty->xpixel = xpixel;
 	tty->ypixel = ypixel;
+	tty_reset_line_sizes(tty);
+}
+
+/* Forget the size of every row; the next full draw of each sets it. */
+static void
+tty_reset_line_sizes(struct tty *tty)
+{
+	u_int	i;
+
+	if (tty->line_sizes == NULL)
+		return;
+	tty->line_sizes = xreallocarray(tty->line_sizes, tty->sy,
+	    sizeof *tty->line_sizes);
+	tty->line_sizes_sy = tty->sy;
+	for (i = 0; i < tty->sy; i++)
+		tty->line_sizes[i] = -1;
+}
+
+/* Line size (GRID_LINE_SIZE) of a terminal row, or -1 if not known. */
+int
+tty_get_line_size(struct tty *tty, u_int py)
+{
+	if (tty->line_sizes == NULL)
+		return (0);
+	if (py >= tty->line_sizes_sy)
+		return (-1);
+	return (tty->line_sizes[py]);
+}
+
+/*
+ * Give a terminal row a line size: DECDWL, DECDHL or DECSWL. A terminal draws
+ * every row normal size while left and right margins are enabled (DECLRMM),
+ * so margins are not used while any row is double size.
+ */
+void
+tty_set_line_size(struct tty *tty, u_int py, int size)
+{
+	const char	*s;
+	u_int		 i;
+
+	if (tty->line_sizes == NULL) {
+		if (size == 0)
+			return;
+		tty->line_sizes = xcalloc(tty->sy, sizeof *tty->line_sizes);
+		tty->line_sizes_sy = tty->sy;
+	}
+	if (py >= tty->line_sizes_sy || tty->line_sizes[py] == size)
+		return;
+
+	if (size > 0 && (~tty->flags & TTY_LINESIZED)) {
+		if (tty_use_margin(tty)) {
+			tty_margin_off(tty);
+			tty_putcode(tty, TTYC_DSMG);
+		}
+		tty->flags |= TTY_LINESIZED;
+	}
+
+	switch (size) {
+	case GRID_LINE_DOUBLE_WIDTH:
+		s = "\033#6";
+		break;
+	case GRID_LINE_DOUBLE_TOP:
+		s = "\033#3";
+		break;
+	case GRID_LINE_DOUBLE_BOTTOM:
+		s = "\033#4";
+		break;
+	default:
+		s = "\033#5";
+		break;
+	}
+	tty_cursor(tty, 0, py);
+	tty_puts(tty, s);
+	tty->line_sizes[py] = size;
+
+	if (size <= 0 && (tty->flags & TTY_LINESIZED)) {
+		for (i = 0; i < tty->line_sizes_sy; i++) {
+			if (tty->line_sizes[i] > 0)
+				return;
+		}
+		tty->flags &= ~TTY_LINESIZED;
+		if (tty_use_margin(tty)) {
+			tty_putcode(tty, TTYC_ENMG);
+			tty->rleft = tty->rright = UINT_MAX;
+		}
+	}
 }
 
 static void
@@ -375,6 +462,7 @@ tty_start_tty(struct tty *tty)
 
 	tty_putcode(tty, TTYC_SMKX);
 	tty_putcode(tty, TTYC_CLEAR);
+	tty_reset_line_sizes(tty);
 
 	if (tty_acs_needed(tty)) {
 		log_debug("%s: using capabilities for ACS", c->name);
@@ -553,6 +641,7 @@ tty_free(struct tty *tty)
 	tty_close(tty);
 
 	free(tty->r.ranges);
+	free(tty->line_sizes);
 }
 
 void
@@ -1130,6 +1219,56 @@ tty_fake_bce(const struct tty *tty, const struct grid_cell *gc, u_int bg)
 }
 
 /*
+ * Is any row of the pane's scroll region not known to be normal size? The
+ * terminal can't be trusted to move line sizes when it scrolls.
+ */
+static int
+tty_region_line_sizes(struct tty *tty, const struct tty_ctx *ctx)
+{
+	u_int	y;
+
+	if (tty->line_sizes == NULL)
+		return (0);
+	for (y = ctx->orupper; y <= ctx->orlower; y++) {
+		if (tty_get_line_size(tty, ctx->yoff + y - ctx->woy) != 0)
+			return (1);
+	}
+	return (0);
+}
+
+/*
+ * Is the pane's line drawn at a different size from the one the terminal row
+ * has? Only a full-width pane's lines are drawn at their own size.
+ */
+static int
+tty_line_size_differs(struct tty *tty, const struct tty_ctx *ctx, u_int py)
+{
+	struct screen	*s = ctx->s;
+	int		 size;
+
+	if (ctx->bigger ||
+	    !tty_full_width(tty, ctx) ||
+	    tty->client->overlay_check != NULL)
+		return (0);
+	size = grid_get_line(s->grid, s->grid->hsize + py)->flags &
+	    GRID_LINE_SIZE;
+	return (tty_get_line_size(tty, ctx->yoff + py) != size);
+}
+
+/* Rows a pane clears entirely go back to normal size. */
+static void
+tty_clear_line_sizes(struct tty *tty, const struct tty_ctx *ctx, u_int py,
+    u_int ny)
+{
+	u_int	y;
+
+	if (tty->line_sizes == NULL || ctx->bigger || !tty_full_width(tty, ctx))
+		return;
+	for (y = py; y < py + ny; y++)
+		tty_set_line_size(tty, ctx->yoff + y, 0);
+}
+
+/*
  * Redraw scroll region using data from screen (already updated). Used when
  * CSR not supported, or window is a pane that doesn't take up the full
  * width of the terminal.
@@ -1214,8 +1353,18 @@ tty_clear_line(struct tty *tty, const struct grid_cell *defaults, u_int py,
     u_int px, u_int nx, u_int bg)
 {
 	struct client		*c = tty->client;
+	u_int			 lsx;
 
 	log_debug("%s: %s, %u at %u,%u", __func__, c->name, nx, px, py);
+
+	/* A double-size row has half as many columns. */
+	lsx = tty->sx;
+	if (tty_get_line_size(tty, py) > 0)
+		lsx /= 2;
+	if (px >= lsx)
+		return;
+	if (nx > lsx - px)
+		nx = lsx - px;
 
 	/* Nothing to clear. */
 	if (nx == 0)
@@ -1224,7 +1373,7 @@ tty_clear_line(struct tty *tty, const struct grid_cell *defaults, u_int py,
 	/* If genuine BCE is available, can try escape sequences. */
 	if (c->overlay_check == NULL && !tty_fake_bce(tty, defaults, bg)) {
 		/* Off the end of the line, use EL if available. */
-		if (px + nx >= tty->sx && tty_term_has(tty->term, TTYC_EL)) {
+		if (px + nx >= lsx && tty_term_has(tty->term, TTYC_EL)) {
 			tty_cursor(tty, px, py);
 			tty_putcode(tty, TTYC_EL);
 			return;
@@ -1699,7 +1848,8 @@ tty_cmd_insertline(struct tty *tty, const struct tty_ctx *ctx)
 	    !tty_term_has(tty->term, TTYC_IL1) ||
 	    ctx->sx == 1 ||
 	    ctx->sy == 1 ||
-	    c->overlay_check != NULL) {
+	    c->overlay_check != NULL ||
+	    tty_region_line_sizes(tty, ctx)) {
 		tty_redraw_region(tty, ctx);
 		return;
 	}
@@ -1727,7 +1877,8 @@ tty_cmd_deleteline(struct tty *tty, const struct tty_ctx *ctx)
 	    !tty_term_has(tty->term, TTYC_DL1) ||
 	    ctx->sx == 1 ||
 	    ctx->sy == 1 ||
-	    c->overlay_check != NULL) {
+	    c->overlay_check != NULL ||
+	    tty_region_line_sizes(tty, ctx)) {
 		tty_redraw_region(tty, ctx);
 		return;
 	}
@@ -1788,7 +1939,8 @@ tty_cmd_reverseindex(struct tty *tty, const struct tty_ctx *ctx)
 	    !tty_term_has(tty->term, TTYC_RIN)) ||
 	    ctx->sx == 1 ||
 	    ctx->sy == 1 ||
-	    c->overlay_check != NULL) {
+	    c->overlay_check != NULL ||
+	    tty_region_line_sizes(tty, ctx)) {
 		tty_redraw_region(tty, ctx);
 		return;
 	}
@@ -1820,7 +1972,8 @@ tty_cmd_linefeed(struct tty *tty, const struct tty_ctx *ctx)
 	    !tty_term_has(tty->term, TTYC_CSR) ||
 	    ctx->sx == 1 ||
 	    ctx->sy == 1 ||
-	    c->overlay_check != NULL) {
+	    c->overlay_check != NULL ||
+	    tty_region_line_sizes(tty, ctx)) {
 		tty_redraw_region(tty, ctx);
 		return;
 	}
@@ -1861,7 +2014,8 @@ tty_cmd_scrollup(struct tty *tty, const struct tty_ctx *ctx)
 	    !tty_term_has(tty->term, TTYC_CSR) ||
 	    ctx->sx == 1 ||
 	    ctx->sy == 1 ||
-	    c->overlay_check != NULL) {
+	    c->overlay_check != NULL ||
+	    tty_region_line_sizes(tty, ctx)) {
 		tty_redraw_region(tty, ctx);
 		return;
 	}
@@ -1902,7 +2056,8 @@ tty_cmd_scrolldown(struct tty *tty, const struct tty_ctx *ctx)
 	    !tty_term_has(tty->term, TTYC_RIN)) ||
 	    ctx->sx == 1 ||
 	    ctx->sy == 1 ||
-	    c->overlay_check != NULL) {
+	    c->overlay_check != NULL ||
+	    tty_region_line_sizes(tty, ctx)) {
 		tty_redraw_region(tty, ctx);
 		return;
 	}
@@ -1938,6 +2093,7 @@ tty_cmd_clearendofscreen(struct tty *tty, const struct tty_ctx *ctx)
 	py = ctx->ocy + 1;
 	ny = ctx->sy - ctx->ocy - 1;
 
+	tty_clear_line_sizes(tty, ctx, py, ny);
 	tty_clear_pane_area(tty, ctx, py, ny, px, nx, ctx->bg);
 
 	px = ctx->ocx;
@@ -1963,6 +2119,7 @@ tty_cmd_clearstartofscreen(struct tty *tty, const struct tty_ctx *ctx)
 	py = 0;
 	ny = ctx->ocy;
 
+	tty_clear_line_sizes(tty, ctx, py, ny);
 	tty_clear_pane_area(tty, ctx, py, ny, px, nx, ctx->bg);
 
 	px = 0;
@@ -1988,6 +2145,7 @@ tty_cmd_clearscreen(struct tty *tty, const struct tty_ctx *ctx)
 	py = 0;
 	ny = ctx->sy;
 
+	tty_clear_line_sizes(tty, ctx, py, ny);
 	tty_clear_pane_area(tty, ctx, py, ny, px, nx, ctx->bg);
 }
 
@@ -2006,6 +2164,7 @@ tty_cmd_alignmenttest(struct tty *tty, const struct tty_ctx *ctx)
 
 	tty_region_pane(tty, ctx, 0, ctx->sy - 1);
 	tty_margin_off(tty);
+	tty_clear_line_sizes(tty, ctx, 0, ctx->sy);
 
 	for (j = 0; j < ctx->sy; j++) {
 		tty_cursor_pane(tty, ctx, 0, j);
@@ -2027,6 +2186,11 @@ tty_cmd_cell(struct tty *tty, const struct tty_ctx *ctx)
 	if (!tty_is_visible(tty, ctx, ctx->ocx, ctx->ocy, 1, 1) ||
 	    (gcp->data.width == 1 && !tty_check_overlay(tty, px, py)))
 		return;
+
+	if (tty_line_size_differs(tty, ctx, ctx->ocy)) {
+		tty_draw_pane(tty, ctx, ctx->ocy);
+		return;
+	}
 
 	if (ctx->num == 2) {
 		tty_draw_line(tty, s, 0, s->cy, screen_size_x(s),
@@ -2071,6 +2235,11 @@ tty_cmd_cells(struct tty *tty, const struct tty_ctx *ctx)
 
 	if (!tty_is_visible(tty, ctx, ctx->ocx, ctx->ocy, ctx->num, 1))
 		return;
+
+	if (tty_line_size_differs(tty, ctx, ctx->ocy)) {
+		tty_draw_pane(tty, ctx, ctx->ocy);
+		return;
+	}
 
 	if (ctx->bigger &&
 	    (ctx->xoff + ctx->ocx < ctx->wox ||

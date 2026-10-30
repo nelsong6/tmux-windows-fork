@@ -223,10 +223,14 @@ struct input_table_entry {
 /* Escape commands. */
 enum input_esc_type {
 	INPUT_ESC_DECALN,
+	INPUT_ESC_DECDHL_BOTTOM,
+	INPUT_ESC_DECDHL_TOP,
+	INPUT_ESC_DECDWL,
 	INPUT_ESC_DECKPAM,
 	INPUT_ESC_DECKPNM,
 	INPUT_ESC_DECRC,
 	INPUT_ESC_DECSC,
+	INPUT_ESC_DECSWL,
 	INPUT_ESC_HTS,
 	INPUT_ESC_IND,
 	INPUT_ESC_NEL,
@@ -243,6 +247,10 @@ enum input_esc_type {
 static const struct input_table_entry input_esc_table[] = {
 	{ '0', "(", INPUT_ESC_SCSG0_ON },
 	{ '0', ")", INPUT_ESC_SCSG1_ON },
+	{ '3', "#", INPUT_ESC_DECDHL_TOP },
+	{ '4', "#", INPUT_ESC_DECDHL_BOTTOM },
+	{ '5', "#", INPUT_ESC_DECSWL },
+	{ '6', "#", INPUT_ESC_DECDWL },
 	{ '7', "",  INPUT_ESC_DECSC },
 	{ '8', "",  INPUT_ESC_DECRC },
 	{ '8', "#", INPUT_ESC_DECALN },
@@ -1430,6 +1438,18 @@ input_esc_dispatch(struct input_ctx *ictx)
 		break;
 	case INPUT_ESC_DECALN:
 		screen_write_alignmenttest(sctx);
+		break;
+	case INPUT_ESC_DECDHL_TOP:
+		screen_write_linesize(sctx, GRID_LINE_DOUBLE_TOP);
+		break;
+	case INPUT_ESC_DECDHL_BOTTOM:
+		screen_write_linesize(sctx, GRID_LINE_DOUBLE_BOTTOM);
+		break;
+	case INPUT_ESC_DECSWL:
+		screen_write_linesize(sctx, 0);
+		break;
+	case INPUT_ESC_DECDWL:
+		screen_write_linesize(sctx, GRID_LINE_DOUBLE_WIDTH);
 		break;
 	case INPUT_ESC_SCSG0_ON:
 		ictx->cell.g0set = 1;
