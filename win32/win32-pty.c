@@ -125,9 +125,14 @@ pty_input_thread(LPVOID arg)
 	return 0;
 }
 
+/*
+ * Spawn cmd in a new pseudo console. A standard handle is the console's own
+ * unless infd or outfd (a CRT descriptor, -1 for none) is given for it; only
+ * those are inherited.
+ */
 struct win32_pty *
 win32_pty_spawn(const char *cmd, const char *cwd, char *env,
-    int cols, int rows, pid_t *out_pid)
+    int cols, int rows, pid_t *out_pid, int infd, int outfd)
 {
 	struct win32_pty *pty;
 	HANDLE pipeIn_read = NULL, pipeIn_write = NULL;
@@ -137,6 +142,8 @@ win32_pty_spawn(const char *cmd, const char *cwd, char *env,
 	STARTUPINFOEXW si;
 	PROCESS_INFORMATION pi;
 	SIZE_T attrSize = 0;
+	HANDLE inherit[2];
+	DWORD attrs = 1, ninherit = 0;
 	int sv[2];
 	wchar_t wcmd[32768];
 	wchar_t wcwd[MAX_PATH];
@@ -185,16 +192,37 @@ win32_pty_spawn(const char *cmd, const char *cwd, char *env,
 	si.StartupInfo.hStdInput = INVALID_HANDLE_VALUE;
 	si.StartupInfo.hStdOutput = INVALID_HANDLE_VALUE;
 	si.StartupInfo.hStdError = INVALID_HANDLE_VALUE;
+	if (infd != -1) {
+		if (!DuplicateHandle(GetCurrentProcess(),
+		    (HANDLE)_get_osfhandle(infd), GetCurrentProcess(),
+		    &si.StartupInfo.hStdInput, 0, TRUE, DUPLICATE_SAME_ACCESS))
+			goto fail;
+		inherit[ninherit++] = si.StartupInfo.hStdInput;
+	}
+	if (outfd != -1) {
+		if (!DuplicateHandle(GetCurrentProcess(),
+		    (HANDLE)_get_osfhandle(outfd), GetCurrentProcess(),
+		    &si.StartupInfo.hStdOutput, 0, TRUE, DUPLICATE_SAME_ACCESS))
+			goto fail;
+		inherit[ninherit++] = si.StartupInfo.hStdOutput;
+	}
+	if (ninherit != 0)
+		attrs++;
 
-	InitializeProcThreadAttributeList(NULL, 1, 0, &attrSize);
+	InitializeProcThreadAttributeList(NULL, attrs, 0, &attrSize);
 	si.lpAttributeList = (LPPROC_THREAD_ATTRIBUTE_LIST)malloc(attrSize);
 	if (si.lpAttributeList == NULL)
 		goto fail;
-	if (!InitializeProcThreadAttributeList(si.lpAttributeList, 1, 0, &attrSize))
+	if (!InitializeProcThreadAttributeList(si.lpAttributeList, attrs, 0,
+	    &attrSize))
 		goto fail;
 	if (!UpdateProcThreadAttribute(si.lpAttributeList, 0,
 	    PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE, pty->hPC, sizeof(HPCON),
 	    NULL, NULL))
+		goto fail;
+	if (ninherit != 0 && !UpdateProcThreadAttribute(si.lpAttributeList, 0,
+	    PROC_THREAD_ATTRIBUTE_HANDLE_LIST, inherit,
+	    ninherit * sizeof inherit[0], NULL, NULL))
 		goto fail;
 
 	/* Convert command and cwd to wide strings. */
@@ -208,12 +236,14 @@ win32_pty_spawn(const char *cmd, const char *cwd, char *env,
 		DWORD flags = EXTENDED_STARTUPINFO_PRESENT;
 		if (env != NULL)
 			flags |= CREATE_UNICODE_ENVIRONMENT;
-		if (!CreateProcessW(NULL, wcmd, NULL, NULL, FALSE,
+		if (!CreateProcessW(NULL, wcmd, NULL, NULL, ninherit != 0,
 		    flags, env,
 		    (cwd != NULL && *cwd != '\0') ? wcwd : NULL,
 		    &si.StartupInfo, &pi))
 			goto fail;
 	}
+	while (ninherit != 0)
+		CloseHandle(inherit[--ninherit]);
 
 	pty->hProcess = pi.hProcess;
 	pty->hThread = pi.hThread;
@@ -243,6 +273,8 @@ win32_pty_spawn(const char *cmd, const char *cwd, char *env,
 	return (pty);
 
 fail:
+	while (ninherit != 0)
+		CloseHandle(inherit[--ninherit]);
 	if (pipeIn_read) CloseHandle(pipeIn_read);
 	if (pipeIn_write) CloseHandle(pipeIn_write);
 	if (pipeOut_read) CloseHandle(pipeOut_read);

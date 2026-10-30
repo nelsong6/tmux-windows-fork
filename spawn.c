@@ -496,7 +496,7 @@ spawn_pane(struct spawn_context *sc, char **cause)
 		envblock = environ_to_win32_block(child);
 		pty = win32_pty_spawn(cmdline, actual_cwd, envblock,
 		    (int)ws.ws_col, (int)ws.ws_row,
-		    &new_wp->pid);
+		    &new_wp->pid, -1, -1);
 		free(envblock);
 		free(cmdline);
 

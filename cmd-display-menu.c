@@ -511,7 +511,8 @@ cmd_display_popup_exec(struct cmd *self, struct cmdq_item *item)
 		return (CMD_RETURN_NORMAL);
 	}
 	if (popup_display(flags, lines, item, px, py, w, h, env, shellcmd, argc,
-	    argv, cwd, title, tc, s, style, border_style, NULL, NULL) != 0) {
+	    argv, cwd, title, tc, s, style, border_style, NULL, NULL, -1,
+	    -1) != 0) {
 		cmd_free_argv(argc, argv);
 		if (env != NULL)
 			environ_free(env);

@@ -67,6 +67,7 @@ set(TMUX_SOURCES
     cmd-detach-client.c
     cmd-display-menu.c
     cmd-display-message.c
+    cmd-display-palette.c
     cmd-display-panes.c
     cmd-find.c
     cmd-find-window.c
@@ -237,8 +238,20 @@ if(TMUX_ENABLE_UTF8PROC)
     list(APPEND TMUX_COMPAT_SOURCES compat/utf8proc.c)
 endif()
 
+# display-palette's command descriptions, from tmux.1
+add_executable(palette-descriptions tools/palette-descriptions.c)
+target_compile_definitions(palette-descriptions PRIVATE _CRT_SECURE_NO_WARNINGS)
+add_custom_command(
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/palette-descriptions.h
+    COMMAND palette-descriptions ${CMAKE_CURRENT_SOURCE_DIR}/tmux.1
+            ${CMAKE_CURRENT_BINARY_DIR}/palette-descriptions.h
+    DEPENDS palette-descriptions ${CMAKE_CURRENT_SOURCE_DIR}/tmux.1
+    COMMENT "Generating palette-descriptions.h from tmux.1"
+)
+
 # Build tmux executable
 add_executable(tmux
+    ${CMAKE_CURRENT_BINARY_DIR}/palette-descriptions.h
     ${TMUX_SOURCES}
     ${TMUX_OSDEP_SOURCES}
     ${TMUX_COMPAT_SOURCES}
@@ -265,6 +278,7 @@ target_compile_definitions(tmux PRIVATE
 
 # Include directories
 target_include_directories(tmux PRIVATE
+    ${CMAKE_CURRENT_BINARY_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/compat
     ${CMAKE_CURRENT_SOURCE_DIR}/win32

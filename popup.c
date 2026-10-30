@@ -769,7 +769,7 @@ popup_display(int flags, enum box_lines lines, struct cmdq_item *item, u_int px,
     u_int py, u_int sx, u_int sy, struct environ *env, const char *shellcmd,
     int argc, char **argv, const char *cwd, const char *title, struct client *c,
     struct session *s, const char *style, const char *border_style,
-    popup_close_cb cb, void *arg)
+    popup_close_cb cb, void *arg, int infd, int outfd)
 {
 	struct popup_data	*pd;
 	u_int			 jx, jy;
@@ -855,7 +855,18 @@ popup_display(int flags, enum box_lines lines, struct cmdq_item *item, u_int px,
 
 	pd->job = job_run(shellcmd, argc, argv, env, s, cwd,
 	    popup_job_update_cb, popup_job_complete_cb, NULL, pd,
-	    JOB_NOWAIT|JOB_PTY|JOB_KEEPWRITE|JOB_DEFAULTSHELL, jx, jy);
+	    JOB_NOWAIT|JOB_PTY|JOB_KEEPWRITE|JOB_DEFAULTSHELL, jx, jy, infd,
+	    outfd);
+	if (pd->job == NULL) {
+		server_client_unref(c);
+		screen_free(&pd->s);
+		colour_palette_free(&pd->palette);
+		free(pd->title);
+		free(pd->style);
+		free(pd->border_style);
+		free(pd);
+		return (-1);
+	}
 	pd->ictx = input_init(NULL, job_get_event(pd->job), &pd->palette, c);
 
 	server_client_set_overlay(c, 0, popup_check_cb, popup_mode_cb,
@@ -946,7 +957,7 @@ popup_editor(struct client *c, const char *buf, size_t len,
 	xasprintf(&cmd, "%s %s", editor, path);
 	if (popup_display(POPUP_INTERNAL|POPUP_CLOSEEXIT, BOX_LINES_DEFAULT,
 	    NULL, px, py, sx, sy, NULL, cmd, 0, NULL, _PATH_TMP, NULL, c, NULL,
-	    NULL, NULL, popup_editor_close_cb, pe) != 0) {
+	    NULL, NULL, popup_editor_close_cb, pe, -1, -1) != 0) {
 		popup_editor_free(pe);
 		free(cmd);
 		return (-1);
