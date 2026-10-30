@@ -371,10 +371,11 @@ win32_process_spawn(const char *cmd, const char *cwd, int outfd)
 }
 
 /*
- * On a crash, write the faulting call stack to stderr and the log, with
- * function names and lines when the PDB is beside the exe (a RelWithDebInfo
- * or Debug build). Without it the server died silently, with no debugger
- * installed to say where; a server started detached has no stderr at all.
+ * On a crash, write the faulting call stack to stderr, the log and
+ * %TEMP%\tmux-crash-<pid>.log, with function names and lines when the PDB is
+ * beside the exe (a RelWithDebInfo or Debug build). Without it the server
+ * died silently, with no debugger installed to say where; a server started
+ * detached, or by upgrade-server, has no stderr and usually no log.
  */
 void log_debug(const char *, ...);
 
@@ -389,14 +390,25 @@ win32_crash_handler(EXCEPTION_POINTERS *ep)
 	IMAGEHLP_LINE64		 line;
 	DWORD64			 disp64;
 	DWORD			 disp;
-	char			 out[1024];
+	char			 out[1024], path[MAX_PATH];
 	size_t			 len;
 	int			 i;
+	FILE			*f = NULL;
+	DWORD			 n;
+
+	n = GetTempPathA(sizeof path, path);
+	if (n != 0 && n < sizeof path - 32) {
+		snprintf(path + n, sizeof path - n, "tmux-crash-%lu.log",
+		    GetCurrentProcessId());
+		f = fopen(path, "w");
+	}
 
 	snprintf(out, sizeof out, "tmux crashed: exception 0x%08lx at %p",
 	    ep->ExceptionRecord->ExceptionCode,
 	    ep->ExceptionRecord->ExceptionAddress);
 	fprintf(stderr, "%s\n", out);
+	if (f != NULL)
+		fprintf(f, "%s\n", out);
 	log_debug("%s", out);
 	SymSetOptions(SYMOPT_LOAD_LINES | SYMOPT_UNDNAME);
 	SymInitialize(proc, NULL, TRUE);
@@ -425,8 +437,12 @@ win32_crash_handler(EXCEPTION_POINTERS *ep)
 			snprintf(out + len, sizeof out - len, " %s:%lu",
 			    line.FileName, line.LineNumber);
 		fprintf(stderr, "%s\n", out);
+		if (f != NULL)
+			fprintf(f, "%s\n", out);
 		log_debug("%s", out);
 	}
+	if (f != NULL)
+		fclose(f);
 	fflush(NULL);
 	return (EXCEPTION_CONTINUE_SEARCH);
 }
