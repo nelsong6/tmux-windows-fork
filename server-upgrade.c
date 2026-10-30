@@ -1107,6 +1107,7 @@ upgrade_restore_client(struct upgrade_reader *r)
 			return;
 		}
 		tty_set_size(&c->tty, sx, sy, xpixel, ypixel);
+		c->tty.flags |= TTY_INHERITED;
 		c->flags |= CLIENT_TERMINAL;
 	}
 	if (o.error) {
