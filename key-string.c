@@ -229,6 +229,10 @@ key_string_get_modifiers(const char **string)
 		case 's':
 			modifiers |= KEYC_SHIFT;
 			break;
+		case 'W':
+		case 'w':
+			modifiers |= KEYC_SUPER;
+			break;
 		default:
 			*string = NULL;
 			return (0);
@@ -349,6 +353,8 @@ key_string_lookup_key(key_code key, int with_flags)
 		strlcat(out, "M-", sizeof out);
 	if (key & KEYC_SHIFT)
 		strlcat(out, "S-", sizeof out);
+	if (key & KEYC_SUPER)
+		strlcat(out, "W-", sizeof out);
 	key &= KEYC_MASK_KEY;
 
 	/* Handle no key. */

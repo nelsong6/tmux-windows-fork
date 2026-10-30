@@ -3,7 +3,8 @@
 # Control mode test for Windows.
 # Tests 1-6 are the pane operations of upstream control-client-sanity.sh,
 # run as normal commands. Tests 7-9 drive a -C client: replies, option
-# subscriptions and exit at end of input; test 10 a held key table (-H, -R).
+# subscriptions and exit at end of input; test 10 a held key table (-H, -R);
+# test 11 the global key table.
 
 PATH=/bin:/usr/bin
 TERM=screen
@@ -132,6 +133,43 @@ ctl_has '^table=root released=yes$' || \
 	fail "hold: table stayed, or -R didn't run, with Ctrl up: $(cat $CTL)"
 wait
 echo "PASS 10: switch-client -H -R"
+
+# --- Test 11: the global table takes W- keys and runs them for the attached
+# client when they are pressed anywhere on the desktop; a server with no
+# client ignores them. The press is simulated only in CI, which has a desktop
+# of its own; on a developer's PC it would land on theirs. ---
+: >$CTL
+IDLE="$TEST_TMUX -Lctrltest-idle"
+$IDLE $FNULL new -d -sidle < /dev/null || fail "global: idle server"
+$IDLE bind -T global 'W-`' set -g @global pressed
+$TMUX bind -T global 'W-`' set -g @global pressed
+$TMUX list-keys -T global | tr -d '\r' | grep -q 'global *W-` ' || \
+	fail "global: W-\` not listed: $($TMUX list-keys -T global)"
+if [ -n "$CI" ]; then
+	(
+		echo "display -p 'attached'"
+		wait_until [ -n "$($TMUX show -gv @global 2>/dev/null)" ]
+		echo "display -p 'global=#{@global}'"
+		wait_until ctl_has '^global='
+	) | $TMUX -C attach -tctrl >$CTL 2>&1 &
+	wait_until ctl_has '^attached$' || fail "global: no client: $(cat $CTL)"
+	powershell.exe -NoProfile -Command '
+		Add-Type -Name K -Namespace W -MemberDefinition "[DllImport(\"user32.dll\")] public static extern void keybd_event(byte vk, byte scan, uint flags, System.UIntPtr extra);"
+		[W.K]::keybd_event(0x5B, 0, 0, [UIntPtr]::Zero)
+		[W.K]::keybd_event(0xC0, 0, 0, [UIntPtr]::Zero)
+		[W.K]::keybd_event(0xC0, 0, 2, [UIntPtr]::Zero)
+		[W.K]::keybd_event(0x5B, 0, 2, [UIntPtr]::Zero)'
+	wait_until ctl_has '^global=' || fail "global: no reply: $(cat $CTL)"
+	ctl_has '^global=pressed$' || \
+		fail "global: Win+\` didn't run the binding: $(cat $CTL)"
+	[ -z "$($IDLE show -gv @global 2>/dev/null)" ] || \
+		fail "global: a server with no client ran the binding"
+	wait
+	echo "PASS 11: global key table"
+else
+	echo "PASS 11: global key table (listed; press simulated only in CI)"
+fi
+$IDLE kill-server 2>/dev/null
 
 $TMUX kill-server 2>/dev/null
 

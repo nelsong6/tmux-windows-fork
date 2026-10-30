@@ -195,6 +195,10 @@ key_bindings_add(const char *name, key_code key, const char *note, int repeat,
 	char			*s;
 
 	table = key_bindings_get_table(name, 1);
+#ifdef _WIN32
+	if (strcmp(name, "global") == 0)
+		win32_global_keys_start();
+#endif
 
 	bd = key_bindings_get(table, key & ~KEYC_MASK_FLAGS);
 	if (cmdlist == NULL) {
@@ -673,6 +677,27 @@ key_bindings_read_only(struct cmdq_item *item, __unused void *data)
 {
 	cmdq_error(item, "client is read-only");
 	return (CMD_RETURN_ERROR);
+}
+
+/*
+ * Run a key from the global table, pressed anywhere on the desktop, for the
+ * most recently active client. A server with no client ignores it.
+ */
+void
+key_bindings_global(key_code key)
+{
+	struct key_table	*table;
+	struct key_binding	*bd;
+	struct client		*c;
+	struct key_event	 event = { .key = key };
+
+	if ((table = key_bindings_get_table("global", 0)) == NULL)
+		return;
+	if ((bd = key_bindings_get(table, key)) == NULL)
+		return;
+	if ((c = cmd_find_best_client(NULL)) == NULL)
+		return;
+	key_bindings_dispatch(bd, NULL, c, &event, NULL);
 }
 
 struct cmdq_item *
