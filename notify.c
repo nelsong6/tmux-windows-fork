@@ -186,6 +186,11 @@ notify_add(const char *name, struct cmd_find_state *fs, struct client *c,
 	item = cmdq_running(NULL);
 	if (item != NULL && (cmdq_get_flags(item) & CMDQ_STATE_NOHOOKS))
 		return;
+#ifdef _WIN32
+	/* A server taking over from another is not a change to report. */
+	if (server_upgrading)
+		return;
+#endif
 
 	ne = xcalloc(1, sizeof *ne);
 	ne->name = xstrdup(name);

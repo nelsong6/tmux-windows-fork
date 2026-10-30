@@ -632,3 +632,130 @@ win32_ipc_cleanup(const char *label)
 		pipe_shutdown_event = NULL;
 	}
 }
+
+/* Stop the pipe accept thread, leaving the pipe open. */
+static void
+pipe_thread_stop(void)
+{
+	pipe_thread_running = 0;
+	if (pipe_shutdown_event != NULL)
+		SetEvent(pipe_shutdown_event);
+	if (pipe_thread_handle != NULL) {
+		WaitForSingleObject(pipe_thread_handle, INFINITE);
+		CloseHandle(pipe_thread_handle);
+		pipe_thread_handle = NULL;
+	}
+}
+
+static int
+pipe_thread_start(void)
+{
+	if (pipe_shutdown_event == NULL)
+		pipe_shutdown_event = CreateEvent(NULL, TRUE, FALSE, NULL);
+	else
+		ResetEvent(pipe_shutdown_event);
+	if (pipe_shutdown_event == NULL)
+		return (-1);
+	pipe_thread_running = 1;
+	pipe_thread_handle = CreateThread(NULL, 0, pipe_accept_thread, NULL, 0,
+	    NULL);
+	return (pipe_thread_handle == NULL ? -1 : 0);
+}
+
+/*
+ * Hand the discovery pipe to a server's replacement: the pipe never closes,
+ * so no client finds the name missing and starts a server of its own. The
+ * nonces given out and not yet used go with it, as "nonce nonce ...".
+ */
+int
+win32_ipc_export(HANDLE child, uint64_t *pipe, uint16_t *port, char **nonces)
+{
+	HANDLE	dst;
+	size_t	len = 0;
+	int	i;
+
+	pipe_thread_stop();
+	if (!DuplicateHandle(GetCurrentProcess(), discovery_pipe, child, &dst,
+	    0, FALSE, DUPLICATE_SAME_ACCESS))
+		return (-1);
+	*pipe = (uint64_t)(uintptr_t)dst;
+	*port = server_tcp_port;
+
+	*nonces = calloc(1, MAX_PENDING_NONCES * (AUTH_TOKEN_LEN * 2 + 1) + 1);
+	if (*nonces == NULL)
+		return (-1);
+	EnterCriticalSection(&nonce_lock);
+	for (i = 0; i < MAX_PENDING_NONCES; i++) {
+		if (!pending_nonces[i].used ||
+		    GetTickCount() - pending_nonces[i].created > NONCE_EXPIRY_MS)
+			continue;
+		len += sprintf(*nonces + len, "%s%s", len == 0 ? "" : " ",
+		    pending_nonces[i].nonce);
+	}
+	LeaveCriticalSection(&nonce_lock);
+	return (0);
+}
+
+/* Take the discovery pipe over from the server this one replaces. */
+int
+win32_ipc_import(const char *label, uint64_t pipe, uint16_t port,
+    const char *nonces)
+{
+	const char	*p = nonces;
+	int		 i = 0;
+
+	win32_wsa_init();
+	if (!nonce_lock_init) {
+		InitializeCriticalSection(&nonce_lock);
+		memset(pending_nonces, 0, sizeof pending_nonces);
+		nonce_lock_init = 1;
+	}
+	while (p != NULL && *p != '\0' && i < MAX_PENDING_NONCES) {
+		while (*p == ' ')
+			p++;
+		if (strlen(p) < AUTH_TOKEN_LEN * 2)
+			break;
+		memcpy(pending_nonces[i].nonce, p, AUTH_TOKEN_LEN * 2);
+		pending_nonces[i].nonce[AUTH_TOKEN_LEN * 2] = '\0';
+		pending_nonces[i].created = GetTickCount();
+		pending_nonces[i].used = 1;
+		p += AUTH_TOKEN_LEN * 2;
+		i++;
+	}
+
+	discovery_pipe = (HANDLE)(uintptr_t)pipe;
+	server_tcp_port = port;
+	strlcpy(server_pipe_name, get_pipe_name(label),
+	    sizeof server_pipe_name);
+	return (pipe_thread_start());
+}
+
+/* Carry on with the discovery pipe after a handover that failed. */
+void
+win32_ipc_resume(void)
+{
+	pipe_thread_start();
+}
+
+/* Describe a socket so another process can open its own copy of it. */
+int
+win32_socket_export(int fd, DWORD pid, WSAPROTOCOL_INFOW *info)
+{
+	if (WSADuplicateSocketW((SOCKET)fd, pid, info) != 0)
+		return (-1);
+	return (0);
+}
+
+/* Open a socket described by win32_socket_export in another process. */
+int
+win32_socket_import(const WSAPROTOCOL_INFOW *info)
+{
+	SOCKET	s;
+
+	win32_wsa_init();
+	s = WSASocketW(FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO,
+	    FROM_PROTOCOL_INFO, (WSAPROTOCOL_INFOW *)info, 0, 0);
+	if (s == INVALID_SOCKET)
+		return (-1);
+	return ((int)s);
+}

@@ -329,3 +329,69 @@ paste_make_sample(struct paste_buffer *pb)
 		strlcpy(buf + width, "...", 4);
 	return (buf);
 }
+
+#ifdef _WIN32
+/* Save every buffer, as it is, for the server's replacement. */
+void
+paste_upgrade_save(struct evbuffer *evb)
+{
+	struct paste_buffer	*pb;
+	struct evbuffer		*o = evbuffer_new();
+	u_int			 n = 0;
+
+	RB_FOREACH(pb, paste_time_tree, &paste_by_time)
+		n++;
+	upw_u32(o, paste_next_index);
+	upw_u32(o, paste_next_order);
+	upw_u32(o, n);
+	RB_FOREACH(pb, paste_time_tree, &paste_by_time) {
+		upw_str(o, pb->name);
+		upw_data(o, pb->data, pb->size);
+		upw_u64(o, (uint64_t)pb->created);
+		upw_u32(o, pb->automatic);
+		upw_u32(o, pb->order);
+	}
+	upw_obj(evb, o);
+	evbuffer_free(o);
+}
+
+/* Restore buffers saved by paste_upgrade_save. */
+void
+paste_upgrade_restore(struct upgrade_reader *r)
+{
+	struct upgrade_reader	 o;
+	struct paste_buffer	*pb;
+	const void		*data;
+	size_t			 size;
+	u_int			 n, i;
+
+	upr_obj(r, &o);
+	paste_next_index = upr_u32(&o);
+	paste_next_order = upr_u32(&o);
+	n = upr_u32(&o);
+	for (i = 0; i < n && !o.error; i++) {
+		pb = xcalloc(1, sizeof *pb);
+		pb->name = upr_str(&o);
+		data = upr_data(&o, &size);
+		pb->data = xmalloc(size + 1);
+		memcpy(pb->data, data, size);
+		pb->size = size;
+		pb->created = (time_t)upr_u64(&o);
+		pb->automatic = upr_u32(&o);
+		pb->order = upr_u32(&o);
+		if (o.error || pb->name == NULL ||
+		    paste_get_name(pb->name) != NULL) {
+			free(pb->name);
+			free(pb->data);
+			free(pb);
+			continue;
+		}
+		if (pb->automatic)
+			paste_num_automatic++;
+		RB_INSERT(paste_name_tree, &paste_by_name, pb);
+		RB_INSERT(paste_time_tree, &paste_by_time, pb);
+	}
+	if (o.error)
+		r->error = 1;
+}
+#endif

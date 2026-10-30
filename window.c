@@ -1996,3 +1996,43 @@ window_pane_send_theme_update(struct window_pane *wp)
 		break;
 	}
 }
+
+#ifdef _WIN32
+/* The next window and pane IDs, kept across an upgrade. */
+void
+window_get_next_ids(u_int *window, u_int *pane)
+{
+	*window = next_window_id;
+	*pane = next_window_pane_id;
+}
+
+void
+window_set_next_ids(u_int window, u_int pane)
+{
+	next_window_id = window;
+	next_window_pane_id = pane;
+}
+
+/* Give a pane a new event on its fd, keeping its parser. */
+void
+window_pane_upgrade_event(struct window_pane *wp)
+{
+	setblocking(wp->fd, 0);
+	wp->event = bufferevent_new(wp->fd, window_pane_read_callback,
+	    NULL, window_pane_error_callback, wp);
+	if (wp->event == NULL)
+		fatalx("out of memory");
+	input_set_event(wp->ictx, wp->event);
+	bufferevent_enable(wp->event, EV_READ|EV_WRITE);
+}
+
+/* Read output taken from a pane's console as though it had arrived. */
+void
+window_pane_upgrade_feed(struct window_pane *wp, struct evbuffer *evb)
+{
+	if (EVBUFFER_LENGTH(evb) == 0)
+		return;
+	evbuffer_add_buffer(wp->event->input, evb);
+	window_pane_read_callback(wp->event, wp);
+}
+#endif
