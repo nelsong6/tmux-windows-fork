@@ -395,9 +395,11 @@ struct termios {
 #define B9600   9600
 #define B38400  38400
 
+/* A console in VT input mode sends DEL for Backspace. */
 static inline int tcgetattr(int fd, struct termios *t) {
 	(void)fd;
 	memset(t, 0, sizeof *t);
+	t->c_cc[VERASE] = '';
 	return 0;
 }
 static inline int tcsetattr(int fd, int act, const struct termios *t) {

@@ -42,7 +42,7 @@ CI runs 8 test scripts from `regress/`:
 - `win32-claude-swarm.sh` — multi-session concurrent usage
 - `win32-format-strings.sh` — `#{...}` format engine (171 assertions)
 - `win32-conf-syntax.sh` — config file parsing (21 files)
-- `win32-keys.sh` — key handling (12 tests, tests effects not raw codes)
+- `win32-keys.sh` — key handling (13 tests, tests effects not raw codes)
 - `win32-has-session.sh` — exit code validation
 - `win32-layout.sh` — pane dimension verification (7 tests)
 - `win32-control-client.sh` — complex pane operations, and a `-C` client's replies, subscriptions and exit (9 tests)
