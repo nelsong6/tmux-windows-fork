@@ -458,6 +458,15 @@ tty_start_tty(struct tty *tty)
 		tcflush(c->fd, TCOFLUSH);
 #endif
 
+	/*
+	 * A terminal taken over by upgrade-server is already on its alternate
+	 * screen. Windows Terminal makes a new one at its main screen's size,
+	 * which it leaves alone while the alternate screen is up, so leave first.
+	 */
+	if (tty->flags & TTY_INHERITED) {
+		tty_putcode(tty, TTYC_RMCUP);
+		tty->flags &= ~TTY_INHERITED;
+	}
 	tty_putcode(tty, TTYC_SMCUP);
 
 	tty_putcode(tty, TTYC_SMKX);
