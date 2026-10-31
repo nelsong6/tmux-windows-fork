@@ -72,12 +72,14 @@ function Press-And-Read {
 
 Say "types"
 $win = [Fg]::Window()
+Say ("window=" + $win)
 [Fg]::Pump()
 # Windows lets a process take the foreground just after input it sent.
 [Fg]::Send(@(0x12)) | Out-Null   # Alt
+Say "alt"
 [Fg]::SetForegroundWindow($win) | Out-Null
 [Fg]::Pump()
-Say ("window=" + $win)
+Say "raised"
 
 $psi = New-Object System.Diagnostics.ProcessStartInfo $Tmux
 $psi.Arguments = "-L$Socket -C attach -t $Session"
@@ -88,6 +90,7 @@ $psi.RedirectStandardError = $true
 $client = [System.Diagnostics.Process]::Start($psi)
 $client.BeginOutputReadLine()
 $client.BeginErrorReadLine()
+Say "started"
 try {
     $clock = [System.Diagnostics.Stopwatch]::StartNew()
     while ($clock.Elapsed.TotalSeconds -lt 10) {
