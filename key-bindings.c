@@ -195,9 +195,9 @@ key_bindings_add(const char *name, key_code key, const char *note, int repeat,
 	char			*s;
 
 	table = key_bindings_get_table(name, 1);
-#ifdef _WIN32
+#ifdef HAVE_DESKTOP_KEYBOARD
 	if (strcmp(name, "global") == 0)
-		win32_global_keys_start();
+		desktop_global_key_add(key & ~KEYC_MASK_FLAGS);
 #endif
 
 	bd = key_bindings_get(table, key & ~KEYC_MASK_FLAGS);
@@ -252,6 +252,10 @@ key_bindings_remove(const char *name, key_code key)
 
 	RB_REMOVE(key_bindings, &table->key_bindings, bd);
 	key_bindings_free(bd);
+#ifdef HAVE_DESKTOP_KEYBOARD
+	if (strcmp(name, "global") == 0)
+		desktop_global_key_remove(key & ~KEYC_MASK_FLAGS);
+#endif
 
 	if (RB_EMPTY(&table->key_bindings) &&
 	    RB_EMPTY(&table->default_key_bindings)) {

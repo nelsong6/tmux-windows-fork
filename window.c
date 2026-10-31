@@ -511,8 +511,10 @@ window_pane_update_focus(struct window_pane *wp)
 	 * pipe to be told of a change until the old server has gone, and focus
 	 * is settled again then.
 	 */
+#ifdef _WIN32
 	if (server_upgrading)
 		return;
+#endif
 
 	if (wp != NULL && (~wp->flags & PANE_EXITED)) {
 		if (wp != wp->window->active)

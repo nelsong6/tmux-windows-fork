@@ -54,6 +54,8 @@ CI runs 15 test scripts from `regress/`:
 - `win32-keep-alive.sh` — a session with `keep-alive-window` set opens that window when its last one goes by kill-window, the shell exiting or move-window, and still ends by kill-session or when the replacement's program exits within a second
 - `win32-upgrade.sh` — `upgrade-server` hands a server with an attached client (unfocused, its pane asking for focus reports) to another process without restarting its panes, waits while copy mode is open, carries on when the new build fails, and keeps the global environment as it was, less its handover variable `TMUX_UPGRADE`, in it and in new panes (6 tests; runs beside `conpty.dll`)
 
+CI's `macos` job builds with tmux's own Unix build (`sh autogen.sh && ./configure --enable-utf8proc && make`, Homebrew's autoconf, automake, pkgconf, libevent and utf8proc) for the work Mac, and runs `regress/palette.sh` (the palette tests, client attached from a pane of a second server, `palette-pick.sh` for fzt) and `regress/hold.sh` (`switch-client -H`/`-R`). The macOS keyboard (held modifiers, the global table as registered hotkeys) is `osdep-darwin-keys.c`; the build is the `tmux-macos` artifact.
+
 They wait with `regress/win32-wait.sh` (poll until a condition holds, fail after 10 s), not fixed sleeps. Match a command's output with `^`: the typed command line holds the same text.
 
 ## Publishing

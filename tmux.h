@@ -3686,8 +3686,18 @@ char		*osdep_get_cwd(int);
 struct event_base *osdep_event_init(void);
 #ifdef _WIN32
 char		*win32_pane_command(pid_t);
-int		 win32_modifiers_held(key_code);
-void		 win32_global_keys_start(void);
+#endif
+
+/*
+ * The keyboard of the desktop the server runs on (osdep-windows.c,
+ * osdep-darwin-keys.c): held modifiers for switch-client -H, and the global
+ * key table.
+ */
+#if defined(_WIN32) || defined(__APPLE__)
+#define HAVE_DESKTOP_KEYBOARD
+int		 desktop_modifiers_held(key_code);
+void		 desktop_global_key_add(key_code);
+void		 desktop_global_key_remove(key_code);
 #endif
 
 /* utf8-combined.c */
