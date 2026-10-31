@@ -1286,6 +1286,9 @@ upgrade_busy(void)
 			    TAILQ_FIRST(&wp->modes)->mode->name);
 		} else if (wp->pipe_fd != -1)
 			xasprintf(&reason, "pane %%%u is piped", wp->id);
+		else if (wp->draw_wait != NULL)
+			xasprintf(&reason, "pane %%%u is waiting to draw",
+			    wp->id);
 #ifdef _WIN32
 		else if (wp->fd != -1 && wp->win32_pty == NULL)
 			xasprintf(&reason, "pane %%%u has no console", wp->id);

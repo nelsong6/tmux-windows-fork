@@ -1072,6 +1072,9 @@ input_parse_buffer(struct window_pane *wp, u_char *buf, size_t len)
 
 	input_parse(ictx, buf, len);
 	screen_write_stop(sctx);
+
+	if (wp->draw_wait != NULL)
+		new_window_draw_check(wp);
 }
 
 /* Parse given input for screen. */

@@ -296,7 +296,7 @@ desktop_keyboard_read(int fd, __unused short events, __unused void *arg)
 		if (~modifiers & KEYC_SUPER)
 			continue;
 		key = (key_code)desktop_key_chars[j].ch | modifiers;
-		key_bindings_global(key);
+		key_bindings_global(key, -1);
 	}
 }
 

@@ -1256,6 +1256,8 @@ struct window_pane {
 
 	struct input_ctx *ictx;
 
+	struct new_window_draw *draw_wait; /* new-window -W, until it draws */
+
 #ifdef _WIN32
 	void		*win32_pty; /* struct win32_pty * */
 #endif
@@ -2916,6 +2918,11 @@ void printflike(2, 3) cmdq_print(struct cmdq_item *, const char *, ...);
 void 		 cmdq_print_data(struct cmdq_item *, struct evbuffer *);
 void printflike(2, 3) cmdq_error(struct cmdq_item *, const char *, ...);
 
+/* cmd-new-window.c */
+void	new_window_draw_check(struct window_pane *);
+void	new_window_draw_end(struct window_pane *, const char *);
+void	new_window_draw_client_lost(struct client *);
+
 /* cmd-wait-for.c */
 void	cmd_wait_for_flush(void);
 
@@ -2938,7 +2945,7 @@ void	 key_bindings_reset(const char *, key_code);
 void	 key_bindings_remove_table(const char *);
 void	 key_bindings_reset_table(const char *);
 void	 key_bindings_init(void);
-void	 key_bindings_global(key_code);
+void	 key_bindings_global(key_code, pid_t);
 struct cmdq_item *key_bindings_dispatch(struct key_binding *,
 	     struct cmdq_item *, struct client *, struct key_event *,
 	     struct cmd_find_state *);
@@ -3691,6 +3698,7 @@ char		*osdep_get_cwd(int);
 struct event_base *osdep_event_init(void);
 #ifdef _WIN32
 char		*win32_pane_command(pid_t);
+int		 win32_pid_descends(pid_t, pid_t);
 #endif
 
 /*

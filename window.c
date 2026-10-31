@@ -1012,6 +1012,8 @@ window_pane_destroy(struct window_pane *wp)
 	window_pane_reset_mode_all(wp);
 	free(wp->searchstr);
 
+	new_window_draw_end(wp, "closed before drawing");
+
 	if (wp->fd != -1) {
 #ifdef HAVE_UTEMPTER
 		utempter_remove_record(wp->fd);

@@ -136,6 +136,20 @@ jobs:
           taskkill //F //IM tmux.exe 2>/dev/null || true
           TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-keep-alive.sh
 
+      - name: Run new-window -W tests
+        shell: bash
+        timeout-minutes: 5
+        run: |
+          taskkill //F //IM tmux.exe 2>/dev/null || true
+          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-new-window-draw.sh
+
+      - name: Run global key foreground tests
+        shell: bash
+        timeout-minutes: 5
+        run: |
+          taskkill //F //IM tmux.exe 2>/dev/null || true
+          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-global-foreground.sh
+
       - name: Fetch ConPTY
         shell: pwsh
         run: |

@@ -1,14 +1,18 @@
 /* $OpenBSD$ */
 
 #include <sys/types.h>
+#ifndef _WIN32
 #include <sys/ioctl.h>
+#endif
 
 #include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
 #include <stdlib.h>
 #include <string.h>
+#ifndef _WIN32
 #include <unistd.h>
+#endif
 
 #ifdef __linux__
 #include <sys/syscall.h>
