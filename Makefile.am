@@ -237,6 +237,11 @@ dist_tmux_SOURCES += osdep-darwin-keys.c
 AM_LDFLAGS += -framework Carbon -framework ApplicationServices
 endif
 
+# The desktop's keyboard on Linux: evdev, for held modifiers and global keys.
+if IS_LINUX
+dist_tmux_SOURCES += osdep-linux-keys.c
+endif
+
 # Add compat file for systemd.
 if HAVE_SYSTEMD
 nodist_tmux_SOURCES += compat/systemd.c

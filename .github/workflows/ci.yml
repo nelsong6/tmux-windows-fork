@@ -202,6 +202,36 @@ jobs:
           name: tmux-macos
           path: tmux
 
+  # Nelson's Linux machine runs this fork too: tmux's own Unix build, with the
+  # Linux keyboard (osdep-linux-keys.c, evdev) for -H and the global table.
+  # CI has no keyboard, so hold.sh sees no modifier held, as on macOS.
+  linux:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y autoconf automake pkg-config bison libevent-dev libncurses-dev libutf8proc-dev
+
+      - name: Build
+        run: |
+          sh autogen.sh
+          ./configure --enable-utf8proc
+          make -j"$(nproc)"
+
+      - name: Run palette tests
+        run: TEST_TMUX="$PWD/tmux" sh regress/palette.sh
+
+      - name: Run hold tests
+        run: TEST_TMUX="$PWD/tmux" sh regress/hold.sh
+
+      - name: Upload Linux build
+        uses: actions/upload-artifact@v4
+        with:
+          name: tmux-linux
+          path: tmux
+
   release:
     needs: build-and-test
     if: startsWith(github.ref, 'refs/tags/v')

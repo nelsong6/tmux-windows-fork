@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# switch-client -H and -R (a chord) on macOS: the table lasts while the key's
+# switch-client -H and -R (a chord) on macOS and Linux: the table lasts while the key's
 # modifiers are physically held, and -R runs when they are released. Nothing
 # holds Ctrl here, so a chord's release comes on the first check after its
 # first key; a second key sent in the same command list arrives before it.
