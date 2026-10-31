@@ -4,7 +4,12 @@
 # hidden. Prints "fg=yes|no" (whether the window could be brought forward),
 # "first=<value>" and "second=<value>", the @fg the binding set each time.
 # SendInput lands on the desktop this runs on: CI only.
-param([string]$Tmux, [string]$Socket, [string]$Session)
+param([string]$Tmux, [string]$Socket, [string]$Session, [string]$Log)
+
+# Each line goes straight to the log, so a run that is killed leaves where it
+# had got to.
+function Say([string]$s) { [System.IO.File]::AppendAllText($Log, "$s`n") }
+Say "start"
 
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -TypeDefinition @'
@@ -50,6 +55,7 @@ function Press-And-Read {
     return "(none, sent=$sent)"
 }
 
+Say "types"
 $form = New-Object System.Windows.Forms.Form
 $form.Text = 'fzt64-foreground'
 $form.TopMost = $true
@@ -61,6 +67,7 @@ $form.Show()
 $form.Activate()
 [System.Windows.Forms.Application]::DoEvents()
 
+Say "form"
 $psi = New-Object System.Diagnostics.ProcessStartInfo $Tmux
 $psi.Arguments = "-L$Socket -C attach -t $Session"
 $psi.UseShellExecute = $false
@@ -76,15 +83,15 @@ while ($clock.Elapsed.TotalSeconds -lt 10) {
     if ((T list-clients -F '#{client_pid}') -contains "$($client.Id)") { break }
     Start-Sleep -Milliseconds 100
 }
-"client=" + $client.Id + " listed=" + ((T list-clients -F '#{client_pid}') -join ',')
-"fg=" + $(if ([Fg]::GetForegroundWindow() -eq $form.Handle) { 'yes' } else { 'no' })
-"first=" + (Press-And-Read)
+Say ("client=" + $client.Id + " listed=" + ((T list-clients -F '#{client_pid}') -join ','))
+Say ("fg=" + $(if ([Fg]::GetForegroundWindow() -eq $form.Handle) { 'yes' } else { 'no' }))
+Say ("first=" + (Press-And-Read))
 
 $form.Hide()
 [System.Windows.Forms.Application]::DoEvents()
 Start-Sleep -Milliseconds 200
-"owner=" + [Fg]::Owner() + " self=" + $PID
-"second=" + (Press-And-Read)
+Say ("owner=" + [Fg]::Owner() + " self=" + $PID)
+Say ("second=" + (Press-And-Read))
 
 } finally {
     $client.StandardInput.Close()

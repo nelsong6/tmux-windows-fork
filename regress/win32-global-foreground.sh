@@ -34,15 +34,17 @@ $TMUX bind -T global 'W-`' set -gF @fg '#{global_key_terminal_foreground}' ||
 
 if [ -n "$CI" ]; then
 	PS="$(cygpath "$SYSTEMROOT")/System32/WindowsPowerShell/v1.0/powershell.exe"
+	: >$OUT.raw
 	"$PS" -NoProfile -ExecutionPolicy Bypass \
 	    -File "$(cygpath -w "$(dirname "$0")/win32-foreground.ps1")" \
 	    -Tmux "$(cygpath -w "$TEST_TMUX")" -Socket $SOCKET -Session fg \
-	    >$OUT.raw 2>&1 </dev/null &
+	    -Log "$(cygpath -w $OUT.raw)" >$OUT.err 2>&1 </dev/null &
 	P=$!
 	WAIT_TIMEOUT=90 wait_until eval '! kill -0 $P 2>/dev/null' ||
 	    { kill $P 2>/dev/null; fail "press script still running after 90s"; }
 	tr -d '\r' <$OUT.raw >$OUT
-	rm -f $OUT.raw
+	tr -d '\r' <$OUT.err
+	rm -f $OUT.raw $OUT.err
 	cat $OUT
 	grep -qx 'first=[01]' $OUT || fail "first press: $(cat $OUT)"
 	if grep -qx 'fg=yes' $OUT; then
