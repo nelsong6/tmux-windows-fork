@@ -1,11 +1,20 @@
-#ifdef _WIN32
-
 #include <sys/types.h>
+#ifndef _WIN32
+#include <sys/wait.h>
+
+#include <errno.h>
+#include <fcntl.h>
+#include <poll.h>
+#include <signal.h>
+#include <unistd.h>
+#endif
 
 #include <stdlib.h>
 #include <string.h>
 
 #include "tmux.h"
+
+#ifdef HAVE_SERVER_UPGRADE
 
 /*
  * Upgrading a running server to another build without restarting anything in
@@ -29,6 +38,27 @@ static char		*upgrade_status;
 static struct event	 upgrade_timer;
 
 static void	upgrade_timer_callback(int, short, void *);
+
+#ifdef _WIN32
+typedef HANDLE upgrade_child;
+#else
+/*
+ * On Linux the new build is started from this process and inherits every
+ * descriptor handed over at the same number; these are the ones to keep open
+ * across its exec.
+ */
+typedef int upgrade_child;
+static int	*upgrade_fds;
+static u_int	 upgrade_nfds;
+
+static void
+upgrade_keep_fd(int fd)
+{
+	upgrade_fds = xreallocarray(upgrade_fds, upgrade_nfds + 1,
+	    sizeof *upgrade_fds);
+	upgrade_fds[upgrade_nfds++] = fd;
+}
+#endif
 
 static void printflike(1, 2)
 upgrade_set_status(const char *fmt, ...)
@@ -585,10 +615,13 @@ upgrade_restore_palette(struct upgrade_reader *r, struct colour_palette *p)
 }
 
 static int
-upgrade_save_pane(struct evbuffer *evb, struct window_pane *wp, HANDLE child)
+upgrade_save_pane(struct evbuffer *evb, struct window_pane *wp,
+    upgrade_child child)
 {
 	struct evbuffer			*o = evbuffer_new();
+#ifdef _WIN32
 	struct win32_pty_handoff	 h;
+#endif
 	int				 i;
 
 	upw_u32(o, wp->id);
@@ -610,6 +643,7 @@ upgrade_save_pane(struct evbuffer *evb, struct window_pane *wp, HANDLE child)
 	upgrade_save_palette(o, &wp->palette);
 	upgrade_save_screen(o, &wp->base);
 
+#ifdef _WIN32
 	upw_u32(o, wp->win32_pty != NULL);
 	if (wp->win32_pty != NULL) {
 		if (win32_pty_export(wp->win32_pty, child, &h) != 0) {
@@ -624,6 +658,14 @@ upgrade_save_pane(struct evbuffer *evb, struct window_pane *wp, HANDLE child)
 		upw_u64(o, h.process);
 		upw_u32(o, h.pid);
 	}
+#else
+	(void)child;
+	upw_u32(o, wp->fd != -1);
+	if (wp->fd != -1) {
+		upw_u32(o, wp->fd);
+		upgrade_keep_fd(wp->fd);
+	}
+#endif
 	upw_u32(o, wp->ictx != NULL);
 	if (wp->ictx != NULL)
 		input_upgrade_save(o, wp->ictx, wp->base.hyperlinks);
@@ -637,7 +679,9 @@ upgrade_restore_pane(struct upgrade_reader *r, struct window *w)
 {
 	struct upgrade_reader		 o;
 	struct window_pane		*wp;
+#ifdef _WIN32
 	struct win32_pty_handoff	 h;
+#endif
 	struct grid			*gd;
 	u_int				 id, next_window, next_pane;
 	int				 i;
@@ -693,6 +737,7 @@ upgrade_restore_pane(struct upgrade_reader *r, struct window *w)
 	if (gd->sx != wp->sx || gd->sy != wp->sy)
 		o.error = 1;
 
+#ifdef _WIN32
 	if (upr_u32(&o)) {
 		h.signal = upr_u64(&o);
 		h.reference = upr_u64(&o);
@@ -707,6 +752,11 @@ upgrade_restore_pane(struct upgrade_reader *r, struct window *w)
 				o.error = 1;
 		}
 	}
+#else
+	/* Inherited at the same number; not read until the old server goes. */
+	if (upr_u32(&o))
+		wp->fd = (int)upr_u32(&o);
+#endif
 	if (upr_u32(&o)) {
 		wp->ictx = input_init(wp, NULL, &wp->palette, NULL);
 		input_upgrade_restore(&o, wp->ictx, wp->base.hyperlinks);
@@ -717,7 +767,8 @@ upgrade_restore_pane(struct upgrade_reader *r, struct window *w)
 }
 
 static int
-upgrade_save_window(struct evbuffer *evb, struct window *w, HANDLE child)
+upgrade_save_window(struct evbuffer *evb, struct window *w,
+    upgrade_child child)
 {
 	struct evbuffer		*o = evbuffer_new();
 	struct window_pane	*wp;
@@ -975,11 +1026,17 @@ upgrade_restore_session(struct upgrade_reader *r)
 	CLIENT_CONTROL_WAITEXIT|CLIENT_NO_DETACH_ON_DESTROY|CLIENT_LOGIN)
 
 static int
+#ifdef _WIN32
 upgrade_save_client(struct evbuffer *evb, struct client *c, DWORD child_pid)
+#else
+upgrade_save_client(struct evbuffer *evb, struct client *c,
+    __unused int child_pid)
+#endif
 {
 	struct evbuffer		*o = evbuffer_new();
-	WSAPROTOCOL_INFOW	 info;
 	u_int			 i;
+#ifdef _WIN32
+	WSAPROTOCOL_INFOW	 info;
 
 	if (win32_socket_export(proc_peer_fd(c->peer), child_pid, &info) != 0) {
 		evbuffer_free(o);
@@ -994,6 +1051,20 @@ upgrade_save_client(struct evbuffer *evb, struct client *c, DWORD child_pid)
 		}
 		upw_data(o, &info, sizeof info);
 	}
+#else
+	upw_u32(o, proc_peer_fd(c->peer));
+	upgrade_keep_fd(proc_peer_fd(c->peer));
+	upw_u32(o, c->fd != -1);
+	if (c->fd != -1) {
+		upw_u32(o, c->fd);
+		upgrade_keep_fd(c->fd);
+	}
+	upw_u32(o, c->out_fd != -1);
+	if (c->out_fd != -1) {
+		upw_u32(o, c->out_fd);
+		upgrade_keep_fd(c->out_fd);
+	}
+#endif
 	upw_u64(o, c->flags & UPGRADE_CLIENT_FLAGS);
 	upw_u32(o, (uint32_t)c->pid);
 	upw_str(o, c->term_name);
@@ -1034,14 +1105,17 @@ upgrade_restore_client(struct upgrade_reader *r)
 	struct upgrade_reader	 o;
 	struct client		*c;
 	struct session		*s;
+#ifdef _WIN32
 	const void		*info;
 	size_t			 size;
+#endif
 	int			 fd;
 	u_int			 i, sx, sy, xpixel, ypixel, sid, lsid;
 	uint64_t		 flags;
 	char			*cause;
 
 	upr_obj(r, &o);
+#ifdef _WIN32
 	info = upr_data(&o, &size);
 	if (o.error || size != sizeof (WSAPROTOCOL_INFOW) ||
 	    (fd = win32_socket_import(info)) == -1) {
@@ -1057,6 +1131,18 @@ upgrade_restore_client(struct upgrade_reader *r)
 			return;
 		}
 	}
+#else
+	fd = (int)upr_u32(&o);
+	if (o.error) {
+		r->error = 1;
+		return;
+	}
+	c = server_client_create(fd);
+	if (upr_u32(&o))
+		c->fd = (int)upr_u32(&o);
+	if (upr_u32(&o))
+		c->out_fd = (int)upr_u32(&o);
+#endif
 	flags = upr_u64(&o);
 	c->flags |= flags | CLIENT_IDENTIFIED;
 	c->pid = (pid_t)upr_u32(&o);
@@ -1147,8 +1233,10 @@ upgrade_busy(void)
 	struct window_pane	*wp;
 	char			*reason = NULL;
 
+#ifdef _WIN32
 	if (!win32_pty_can_export())
 		return (xstrdup("panes use Windows' own console, not conpty.dll"));
+#endif
 	if (job_still_running())
 		return (xstrdup("a command started by tmux is still running"));
 	if (server_pending_ttys() != 0)
@@ -1188,8 +1276,10 @@ upgrade_busy(void)
 			    TAILQ_FIRST(&wp->modes)->mode->name);
 		} else if (wp->pipe_fd != -1)
 			xasprintf(&reason, "pane %%%u is piped", wp->id);
+#ifdef _WIN32
 		else if (wp->fd != -1 && wp->win32_pty == NULL)
 			xasprintf(&reason, "pane %%%u has no console", wp->id);
+#endif
 		if (reason != NULL)
 			return (reason);
 	}
@@ -1204,16 +1294,27 @@ upgrade_send_all(int fd, struct evbuffer *evb)
 	int		n;
 
 	while (EVBUFFER_LENGTH(evb) != 0) {
+#ifdef _WIN32
 		n = send((SOCKET)fd, (const char *)EVBUFFER_DATA(evb),
 		    (int)EVBUFFER_LENGTH(evb), 0);
+#else
+		n = write(fd, EVBUFFER_DATA(evb), EVBUFFER_LENGTH(evb));
+#endif
 		if (n > 0) {
 			evbuffer_drain(evb, n);
 			continue;
 		}
+#ifdef _WIN32
 		if (n == 0 || WSAGetLastError() != WSAEWOULDBLOCK ||
 		    get_timer() - start > UPGRADE_FLUSH_TIMEOUT)
 			return (-1);
 		Sleep(1);
+#else
+		if (n == 0 || (errno != EAGAIN && errno != EINTR) ||
+		    get_timer() - start > UPGRADE_FLUSH_TIMEOUT)
+			return (-1);
+		usleep(1000);
+#endif
 	}
 	return (0);
 }
@@ -1239,6 +1340,7 @@ upgrade_flush_clients(void)
 	return (0);
 }
 
+#ifdef _WIN32
 /*
  * Stop reading every console and read what is left in its bridge, so the new
  * server starts at the next byte. Replies the parser makes go straight to the
@@ -1291,20 +1393,63 @@ upgrade_resume_panes(void)
 		window_pane_upgrade_event(wp);
 	}
 }
+#else
+/*
+ * Stop reading every pane and parse what was read, so the new server starts
+ * at the next byte in the pty; what was waiting to go to a pane goes first.
+ */
+static void
+upgrade_stop_panes(void)
+{
+	struct window_pane	*wp;
+	struct evbuffer		*evb;
+
+	evb = evbuffer_new();
+	RB_FOREACH(wp, window_pane_tree, &all_window_panes) {
+		if (wp->fd == -1 || wp->event == NULL)
+			continue;
+		bufferevent_disable(wp->event, EV_READ|EV_WRITE);
+		upgrade_send_all(wp->fd, bufferevent_get_output(wp->event));
+		evbuffer_add_buffer(evb, bufferevent_get_input(wp->event));
+		window_pane_upgrade_feed(wp, evb);
+		evbuffer_drain(evb, EVBUFFER_LENGTH(evb));
+		upgrade_send_all(wp->fd, bufferevent_get_output(wp->event));
+	}
+	evbuffer_free(evb);
+}
+
+/* Read the panes again after a handover that did not happen. */
+static void
+upgrade_resume_panes(void)
+{
+	struct window_pane	*wp;
+
+	RB_FOREACH(wp, window_pane_tree, &all_window_panes) {
+		if (wp->fd != -1 && wp->event != NULL)
+			bufferevent_enable(wp->event, EV_READ|EV_WRITE);
+	}
+}
+#endif
 
 /* Build the state for the new server, with handles that are its own. */
 static int
+#ifdef _WIN32
 upgrade_save(struct evbuffer *evb, HANDLE child, DWORD child_pid,
     char **cause)
+#else
+upgrade_save(struct evbuffer *evb, int child, int child_pid, char **cause)
+#endif
 {
 	struct evbuffer		*o;
 	struct window		*w;
 	struct session		*s;
 	struct client		*c;
+#ifdef _WIN32
 	WSAPROTOCOL_INFOW	 info;
 	uint64_t		 pipe;
 	uint16_t		 port;
 	char			*nonces;
+#endif
 	u_int			 n, next_window, next_pane;
 
 	upw_str(evb, UPGRADE_MAGIC);
@@ -1312,6 +1457,7 @@ upgrade_save(struct evbuffer *evb, HANDLE child, DWORD child_pid,
 	upw_u32(evb, PROTOCOL_VERSION);
 
 	o = evbuffer_new();
+#ifdef _WIN32
 	if (win32_ipc_export(child, &pipe, &port, &nonces) != 0 ||
 	    win32_socket_export(server_listen_fd(), child_pid, &info) != 0) {
 		evbuffer_free(o);
@@ -1324,6 +1470,10 @@ upgrade_save(struct evbuffer *evb, HANDLE child, DWORD child_pid,
 	upw_str(o, nonces);
 	free(nonces);
 	upw_data(o, &info, sizeof info);
+#else
+	upw_u32(o, server_listen_fd());
+	upgrade_keep_fd(server_listen_fd());
+#endif
 	upw_obj(evb, o);
 
 	window_get_next_ids(&next_window, &next_pane);
@@ -1372,6 +1522,7 @@ upgrade_save(struct evbuffer *evb, HANDLE child, DWORD child_pid,
 	return (0);
 }
 
+#ifdef _WIN32
 /* Start the new build, with the two pipes it talks to us on. */
 static int
 upgrade_spawn(HANDLE state, HANDLE ack, PROCESS_INFORMATION *pi,
@@ -1573,6 +1724,176 @@ upgrade_run(char **cause)
 		server_redraw_client(c);
 	return (-1);
 }
+#else
+/*
+ * Start the new build as a child of this server, which it outlives. It keeps
+ * every descriptor handed over at the same number, and the state pipe and
+ * the answer pipe besides.
+ */
+static pid_t
+upgrade_spawn(int state, int ack, char **cause)
+{
+	char	 env[64], *argv[6];
+	pid_t	 pid;
+	u_int	 i;
+	int	 argc = 0;
+
+	argv[argc++] = upgrade_exe;
+	if (log_get_level() > 0)
+		argv[argc++] = (char *)"-v";
+	if (log_get_level() > 1)
+		argv[argc++] = (char *)"-v";
+	argv[argc++] = (char *)"-D";
+	argv[argc++] = (char *)"-S";
+	argv[argc++] = socket_path;
+	argv[argc] = NULL;
+
+	switch (pid = fork()) {
+	case -1:
+		xasprintf(cause, "can't fork: %s", strerror(errno));
+		return (-1);
+	case 0:
+		for (i = 0; i < upgrade_nfds; i++)
+			fcntl(upgrade_fds[i], F_SETFD, 0);
+		fcntl(state, F_SETFD, 0);
+		fcntl(ack, F_SETFD, 0);
+		snprintf(env, sizeof env, "%d,%d", state, ack);
+		setenv("TMUX_UPGRADE", env, 1);
+		setsid();
+		execv(upgrade_exe, argv);
+		_exit(127);
+	}
+	return (pid);
+}
+
+static int
+upgrade_write_all(int fd, const void *data, size_t size)
+{
+	const char	*p = data;
+	ssize_t		 n;
+
+	while (size != 0) {
+		n = write(fd, p, size);
+		if (n == -1 && errno == EINTR)
+			continue;
+		if (n <= 0)
+			return (-1);
+		p += n;
+		size -= n;
+	}
+	return (0);
+}
+
+/* Wait for the new server's line: "ok" once it holds everything. */
+static int
+upgrade_wait_ack(int ack, char **cause)
+{
+	uint64_t	 start = get_timer();
+	struct pollfd	 pfd = { .fd = ack, .events = POLLIN };
+	char		 line[512];
+	size_t		 len = 0;
+	ssize_t		 n;
+
+	for (;;) {
+		if (get_timer() - start > UPGRADE_ACK_TIMEOUT) {
+			*cause = xstrdup("the new server did not answer");
+			return (-1);
+		}
+		if (poll(&pfd, 1, 100) <= 0)
+			continue;
+		n = read(ack, line + len, 1);
+		if (n == -1 && errno == EINTR)
+			continue;
+		if (n <= 0) {
+			*cause = xstrdup("the new server exited");
+			return (-1);
+		}
+		if (line[len] == '\n') {
+			line[len] = '\0';
+			if (strcmp(line, "ok") == 0)
+				return (0);
+			*cause = xstrdup(line);
+			return (-1);
+		}
+		if (++len == sizeof line - 1) {
+			*cause = xstrdup("lost the new server");
+			return (-1);
+		}
+	}
+}
+
+static int
+upgrade_run(char **cause)
+{
+	struct evbuffer	*evb;
+	struct client	*c;
+	int		 state[2], ack[2];
+	pid_t		 pid;
+	uint64_t	 size;
+
+	if (upgrade_flush_clients() != 0) {
+		*cause = xstrdup("a client is not reading");
+		return (-1);
+	}
+	status_prompt_save_history();
+
+	free(upgrade_fds);
+	upgrade_fds = NULL;
+	upgrade_nfds = 0;
+	upgrade_stop_panes();
+	evb = evbuffer_new();
+	if (upgrade_save(evb, -1, -1, cause) != 0)
+		goto resume;
+	log_debug("upgrade: state is %zu bytes", EVBUFFER_LENGTH(evb));
+
+	if (pipe(state) != 0) {
+		*cause = xstrdup("can't create a pipe");
+		goto resume;
+	}
+	if (pipe(ack) != 0) {
+		close(state[0]);
+		close(state[1]);
+		*cause = xstrdup("can't create a pipe");
+		goto resume;
+	}
+	fcntl(state[1], F_SETFD, FD_CLOEXEC);
+	fcntl(ack[0], F_SETFD, FD_CLOEXEC);
+	pid = upgrade_spawn(state[0], ack[1], cause);
+	close(state[0]);
+	close(ack[1]);
+	if (pid == -1) {
+		close(state[1]);
+		close(ack[0]);
+		goto resume;
+	}
+	log_debug("upgrade: started %s (pid %ld)", upgrade_exe, (long)pid);
+
+	size = EVBUFFER_LENGTH(evb);
+	if (upgrade_write_all(state[1], &size, sizeof size) != 0 ||
+	    upgrade_write_all(state[1], EVBUFFER_DATA(evb), size) != 0)
+		*cause = xstrdup("can't send the new server its state");
+	close(state[1]);
+
+	if (*cause == NULL && upgrade_wait_ack(ack[0], cause) == 0) {
+		/*
+		 * The new server holds every pty and socket now. Nothing here
+		 * may close one on the way out, so no exit handlers run.
+		 */
+		log_debug("upgrade: handed over to %s (pid %ld)", upgrade_exe,
+		    (long)pid);
+		_exit(0);
+	}
+	kill(pid, SIGKILL);
+	close(ack[0]);
+
+resume:
+	evbuffer_free(evb);
+	upgrade_resume_panes();
+	TAILQ_FOREACH(c, &clients, entry)
+		server_redraw_client(c);
+	return (-1);
+}
+#endif
 
 static void
 upgrade_timer_callback(__unused int fd, __unused short events,
@@ -1604,6 +1925,7 @@ int
 server_upgrade_request(const char *exe, char **cause)
 {
 	struct timeval	tv = { 0 };
+#ifdef _WIN32
 	DWORD		attr;
 
 	attr = GetFileAttributesA(exe);
@@ -1612,6 +1934,12 @@ server_upgrade_request(const char *exe, char **cause)
 		xasprintf(cause, "no such file: %s", exe);
 		return (-1);
 	}
+#else
+	if (*exe != '/' || access(exe, X_OK) != 0) {
+		xasprintf(cause, "no such file: %s", exe);
+		return (-1);
+	}
+#endif
 	free(upgrade_exe);
 	upgrade_exe = xstrdup(exe);
 	upgrade_set_status("waiting");
@@ -1630,13 +1958,20 @@ server_upgrade_status(void)
 
 /* The new server's side. */
 
+#ifdef _WIN32
+typedef HANDLE upgrade_pipe;
+#else
+typedef int upgrade_pipe;
+#endif
+
 static void
-upgrade_answer(HANDLE ack, const char *line)
+upgrade_answer(upgrade_pipe ack, const char *line)
 {
 	upgrade_write_all(ack, line, strlen(line));
 	upgrade_write_all(ack, "\n", 1);
 }
 
+#ifdef _WIN32
 static int
 upgrade_read_state(HANDLE state, u_char **data, size_t *size)
 {
@@ -1660,6 +1995,43 @@ upgrade_read_state(HANDLE state, u_char **data, size_t *size)
 	return (0);
 }
 
+#else
+static int
+upgrade_read_all(int fd, void *data, size_t size)
+{
+	char	*p = data;
+	ssize_t	 n;
+
+	while (size != 0) {
+		n = read(fd, p, size);
+		if (n == -1 && errno == EINTR)
+			continue;
+		if (n <= 0)
+			return (-1);
+		p += n;
+		size -= n;
+	}
+	return (0);
+}
+
+static int
+upgrade_read_state(int state, u_char **data, size_t *size)
+{
+	uint64_t	n;
+
+	if (upgrade_read_all(state, &n, sizeof n) != 0 ||
+	    n > (uint64_t)SIZE_MAX)
+		return (-1);
+	*data = xmalloc(n == 0 ? 1 : (size_t)n);
+	if (upgrade_read_all(state, *data, (size_t)n) != 0) {
+		free(*data);
+		return (-1);
+	}
+	*size = (size_t)n;
+	return (0);
+}
+#endif
+
 /*
  * Rebuild the server handed over in TMUX_UPGRADE and answer. Returns the
  * listening socket, or exits if this build can't take it over, leaving the
@@ -1673,28 +2045,46 @@ server_upgrade_restore(void)
 	struct window		*w;
 	struct window_pane	*wp;
 	struct client		*c;
-	HANDLE			 state, ack;
-	unsigned long long	 hstate, hack;
+	upgrade_pipe		 state, ack;
 	u_char			*data;
 	size_t			 size;
+	char			*magic, *cause = NULL;
+	uint32_t		 version;
+#ifdef _WIN32
+	unsigned long long	 hstate, hack;
 	const void		*info;
-	char			*magic, *nonces = NULL, *cause = NULL;
+	char			*nonces = NULL;
 	uint64_t		 pipe;
-	uint32_t		 version, port;
+	uint32_t		 port;
+#else
+	int			 istate, iack;
+#endif
 	u_int			 n, i, next_session, next_window, next_pane;
 	int			 fd = -1;
 
+#ifdef _WIN32
 	if (sscanf(getenv("TMUX_UPGRADE"), "%llu,%llu", &hstate, &hack) != 2)
 		exit(1);
 	state = (HANDLE)(uintptr_t)hstate;
 	ack = (HANDLE)(uintptr_t)hack;
 	_putenv("TMUX_UPGRADE=");
+#else
+	if (sscanf(getenv("TMUX_UPGRADE"), "%d,%d", &istate, &iack) != 2)
+		exit(1);
+	state = istate;
+	ack = iack;
+	unsetenv("TMUX_UPGRADE");
+#endif
 
 	if (upgrade_read_state(state, &data, &size) != 0) {
 		upgrade_answer(ack, "can't read the state");
 		exit(1);
 	}
+#ifdef _WIN32
 	CloseHandle(state);
+#else
+	close(state);
+#endif
 	r.p = data;
 	r.left = size;
 	r.error = 0;
@@ -1724,6 +2114,7 @@ server_upgrade_restore(void)
 		/* nothing */;
 
 	upr_obj(&r, &o);
+#ifdef _WIN32
 	pipe = upr_u64(&o);
 	port = upr_u32(&o);
 	nonces = upr_str(&o);
@@ -1733,6 +2124,14 @@ server_upgrade_restore(void)
 		cause = xstrdup("can't take over the server's socket");
 		goto fail;
 	}
+#else
+	fd = (int)upr_u32(&o);
+	if (o.error) {
+		cause = xstrdup("can't take over the server's socket");
+		goto fail;
+	}
+	fcntl(fd, F_SETFD, FD_CLOEXEC);
+#endif
 
 	upr_obj(&r, &o);
 	upr_time(&o, &start_time);
@@ -1788,16 +2187,37 @@ server_upgrade_restore(void)
 	cfg_finished = 1;
 	status_prompt_load_history();
 
+#ifdef _WIN32
 	if (win32_ipc_import(socket_path, pipe, port, nonces) != 0) {
 		cause = xstrdup("can't take over the discovery pipe");
 		goto fail;
 	}
 	free(nonces);
+#endif
 
 	upgrade_answer(ack, "ok");
+#ifdef _WIN32
 	CloseHandle(ack);
+#else
+	close(ack);
+#endif
 
 	/* The old server has gone; start reading. */
+#ifndef _WIN32
+	RB_FOREACH(wp, window_pane_tree, &all_window_panes) {
+		if (wp->fd == -1)
+			continue;
+		fcntl(wp->fd, F_SETFD, FD_CLOEXEC);
+		window_pane_upgrade_event(wp);
+	}
+	TAILQ_FOREACH(c, &clients, entry) {
+		fcntl(proc_peer_fd(c->peer), F_SETFD, FD_CLOEXEC);
+		if (c->fd != -1)
+			fcntl(c->fd, F_SETFD, FD_CLOEXEC);
+		if (c->out_fd != -1)
+			fcntl(c->out_fd, F_SETFD, FD_CLOEXEC);
+	}
+#else
 	RB_FOREACH(wp, window_pane_tree, &all_window_panes) {
 		if (wp->win32_pty == NULL)
 			continue;
@@ -1810,6 +2230,7 @@ server_upgrade_restore(void)
 		win32_process_watch(win32_pty_get_process(wp->win32_pty),
 		    wp->pid);
 	}
+#endif
 	recalculate_sizes();
 	TAILQ_FOREACH(c, &clients, entry)
 		server_redraw_client(c);
@@ -1822,8 +2243,12 @@ server_upgrade_restore(void)
 fail:
 	log_debug("upgrade: %s", cause);
 	upgrade_answer(ack, cause);
+#ifdef _WIN32
 	TerminateProcess(GetCurrentProcess(), 1);
+#else
+	_exit(1);
+#endif
 	return (-1);
 }
 
-#endif /* _WIN32 */
+#endif /* HAVE_SERVER_UPGRADE */

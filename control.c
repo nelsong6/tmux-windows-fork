@@ -1190,7 +1190,7 @@ control_remove_sub(struct client *c, const char *name)
 		evtimer_del(&cs->subs_timer);
 }
 
-#ifdef _WIN32
+#ifdef HAVE_SERVER_UPGRADE
 /* Save a control client's subscriptions for the server's replacement. */
 void
 control_upgrade_save(struct evbuffer *evb, struct client *c)

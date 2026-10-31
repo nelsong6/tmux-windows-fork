@@ -511,7 +511,7 @@ window_pane_update_focus(struct window_pane *wp)
 	 * pipe to be told of a change until the old server has gone, and focus
 	 * is settled again then.
 	 */
-#ifdef _WIN32
+#ifdef HAVE_SERVER_UPGRADE
 	if (server_upgrading)
 		return;
 #endif
@@ -2007,7 +2007,7 @@ window_pane_send_theme_update(struct window_pane *wp)
 	}
 }
 
-#ifdef _WIN32
+#ifdef HAVE_SERVER_UPGRADE
 /* The next window and pane IDs, kept across an upgrade. */
 void
 window_get_next_ids(u_int *window, u_int *pane)

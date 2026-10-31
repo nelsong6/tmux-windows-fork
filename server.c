@@ -56,6 +56,22 @@ static int		 server_exit;
 static struct event	 server_ev_accept;
 static struct event	 server_ev_tidy;
 
+#if defined(HAVE_SERVER_UPGRADE) && !defined(_WIN32)
+/* The listening socket, for a server's replacement. */
+int
+server_listen_fd(void)
+{
+	return (server_fd);
+}
+
+/* A Unix client brings its terminal with it; none waits apart. */
+u_int
+server_pending_ttys(void)
+{
+	return (0);
+}
+#endif
+
 #ifdef _WIN32
 /*
  * Pending tty channel connections waiting to be matched with a client.
@@ -342,14 +358,14 @@ server_start(struct tmuxproc *client, uint64_t flags, struct event_base *base,
 	TAILQ_INIT(&message_log);
 	gettimeofday(&start_time, NULL);
 
-#ifdef HAVE_SYSTEMD
-	server_fd = systemd_create_socket(flags, &cause);
-#elif defined(_WIN32)
+#ifdef HAVE_SERVER_UPGRADE
 	if (getenv("TMUX_UPGRADE") != NULL) {
 		server_fd = server_upgrade_restore();
 		setblocking(server_fd, 0);
 	} else
-		server_fd = server_create_socket(flags, &cause);
+#endif
+#ifdef HAVE_SYSTEMD
+	server_fd = systemd_create_socket(flags, &cause);
 #else
 	server_fd = server_create_socket(flags, &cause);
 #endif

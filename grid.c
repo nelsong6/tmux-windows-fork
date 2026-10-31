@@ -1610,7 +1610,7 @@ grid_in_set(struct grid *gd, u_int px, u_int py, const char *set)
 	return (utf8_cstrhas(set, &gc.data));
 }
 
-#ifdef _WIN32
+#ifdef HAVE_SERVER_UPGRADE
 /*
  * Save a grid for the server's replacement: every line's cells as they are
  * stored, with each extended cell's character and hyperlink written out, since

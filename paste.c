@@ -330,7 +330,7 @@ paste_make_sample(struct paste_buffer *pb)
 	return (buf);
 }
 
-#ifdef _WIN32
+#ifdef HAVE_SERVER_UPGRADE
 /* Save every buffer, as it is, for the server's replacement. */
 void
 paste_upgrade_save(struct evbuffer *evb)

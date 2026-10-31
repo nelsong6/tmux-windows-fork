@@ -1286,7 +1286,7 @@ options_remove_or_default(struct options_entry *o, int idx, char **cause)
 	return (0);
 }
 
-#ifdef _WIN32
+#ifdef HAVE_SERVER_UPGRADE
 /*
  * Save the options set at this level (not inherited ones) for the server's
  * replacement. Numbers go as numbers; strings, array items and commands go as

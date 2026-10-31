@@ -3529,7 +3529,7 @@ input_report_current_theme(struct input_ctx *ictx)
 	}
 }
 
-#ifdef _WIN32
+#ifdef HAVE_SERVER_UPGRADE
 /* Parser states by name, for the server's replacement. */
 static const struct input_state *input_upgrade_states[] = {
 	&input_state_ground,

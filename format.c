@@ -2368,7 +2368,7 @@ format_cb_server_sessions(__unused struct format_tree *ft)
 	return (format_printf("%u", n));
 }
 
-#ifdef _WIN32
+#ifdef HAVE_SERVER_UPGRADE
 /* Callback for server_upgrade. */
 static void *
 format_cb_server_upgrade(__unused struct format_tree *ft)
@@ -3413,7 +3413,7 @@ static const struct format_table_entry format_table[] = {
 	{ "server_sessions", FORMAT_TABLE_STRING,
 	  format_cb_server_sessions
 	},
-#ifdef _WIN32
+#ifdef HAVE_SERVER_UPGRADE
 	{ "server_upgrade", FORMAT_TABLE_STRING,
 	  format_cb_server_upgrade
 	},

@@ -25,7 +25,7 @@ const struct cmd_entry cmd_upgrade_server_entry = {
 static enum cmd_retval
 cmd_upgrade_server_exec(struct cmd *self, struct cmdq_item *item)
 {
-#ifdef _WIN32
+#ifdef HAVE_SERVER_UPGRADE
 	struct args	*args = cmd_get_args(self);
 	char		*cause;
 
@@ -37,7 +37,7 @@ cmd_upgrade_server_exec(struct cmd *self, struct cmdq_item *item)
 	return (CMD_RETURN_NORMAL);
 #else
 	(void)self;
-	cmdq_error(item, "upgrade-server is only on Windows");
+	cmdq_error(item, "upgrade-server is only on Windows and Linux");
 	return (CMD_RETURN_ERROR);
 #endif
 }

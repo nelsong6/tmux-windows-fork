@@ -182,6 +182,12 @@ client_connect(struct event_base *base, const char *path, uint64_t flags)
 	int			fd, lockfd = -1, locked = 0;
 	char		       *lockfile = NULL;
 
+#ifdef HAVE_SERVER_UPGRADE
+	/* Taking over from a server: it is still there, so don't connect. */
+	if ((flags & CLIENT_NOFORK) && getenv("TMUX_UPGRADE") != NULL)
+		return (server_start(client_proc, flags, base, -1, NULL));
+#endif
+
 	memset(&sa, 0, sizeof sa);
 	sa.sun_family = AF_UNIX;
 	size = strlcpy(sa.sun_path, path, sizeof sa.sun_path);

@@ -395,7 +395,7 @@ proc_flush_peer(struct tmuxpeer *peer)
 	imsgbuf_flush(&peer->ibuf);
 }
 
-#ifdef _WIN32
+#ifdef HAVE_SERVER_UPGRADE
 /* Whether a peer has sent part of a message not yet read whole. */
 int
 proc_peer_read_pending(struct tmuxpeer *peer)

@@ -1735,7 +1735,7 @@ bind-key -n C-t switch-client -Tctrl-t -H -R new-window
 bind-key -Tctrl-t C-a new-window menu
 .Ed
 .It Ic upgrade-server Ar tmux-path
-(Windows only.)
+(Windows and Linux.)
 Move the server to the build at
 .Ar tmux-path
 without restarting anything in it.
@@ -1749,6 +1749,36 @@ one fails, the old one carries on.
 The
 .Ic server_upgrade
 format shows whether the server is waiting and why, or why it failed.
+.It Xo Ic adopt-pane
+.Fl p Ar server-pid
+.Fl f Ar fd
+.Fl P Ar pane-pid
+.Op Fl s Ar screen-file
+.Op Fl t Ar target-pane
+.Xc
+(Linux only.)
+Take over the terminal of a pane of another
+.Nm
+server, so its program keeps running here: the other server's descriptor
+.Ar fd
+(a pty master) replaces
+.Ar target-pane Ns 's
+terminal, whose program gets a hangup, and
+.Ar pane-pid
+becomes the pane's process.
+With
+.Fl s ,
+.Ar screen-file
+(as written by
+.Ic capture-pane
+.Fl ep ,
+less its last newline, then the cursor's position) is drawn into the pane
+first.
+It moves a server with no
+.Ic upgrade-server
+onto this build; copying another process's descriptor may need
+.Pa /proc/sys/kernel/yama/ptrace_scope
+at 0.
 .El
 .Sh WINDOWS AND PANES
 Each window displayed by

@@ -36,6 +36,11 @@
 #endif
 
 #include "compat.h"
+
+/* upgrade-server moves a running server to another build (Windows, Linux). */
+#if defined(_WIN32) || defined(__linux__)
+#define HAVE_SERVER_UPGRADE
+#endif
 #include "tmux-protocol.h"
 #include "xmalloc.h"
 
@@ -2361,7 +2366,7 @@ struct tmuxpeer *proc_add_peer(struct tmuxproc *, int,
 void	proc_remove_peer(struct tmuxpeer *);
 void	proc_kill_peer(struct tmuxpeer *);
 void	proc_flush_peer(struct tmuxpeer *);
-#ifdef _WIN32
+#ifdef HAVE_SERVER_UPGRADE
 int	proc_peer_read_pending(struct tmuxpeer *);
 #endif
 void	proc_toggle_log(struct tmuxproc *);
@@ -3831,7 +3836,7 @@ struct hyperlinks	*hyperlinks_copy(struct hyperlinks *);
 void			 hyperlinks_reset(struct hyperlinks *);
 void			 hyperlinks_free(struct hyperlinks *);
 
-#ifdef _WIN32
+#ifdef HAVE_SERVER_UPGRADE
 /*
  * server-upgrade.c. The state a server hands to its replacement is a stream of
  * objects, each length-prefixed so a newer reader sees zeroes for fields an
