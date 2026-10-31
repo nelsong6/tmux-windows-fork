@@ -1442,6 +1442,12 @@ grid_reflow(struct grid *gd, u_int sx)
 		if (gl->flags & GRID_LINE_DEAD)
 			continue;
 
+		/* A double-size line is never split or joined. */
+		if (gl->flags & GRID_LINE_SIZE) {
+			grid_reflow_move(target, gl);
+			continue;
+		}
+
 		/*
 		 * Work out the width of this line. at is the point at which
 		 * the available width is hit, and width is the full line

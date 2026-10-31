@@ -106,6 +106,8 @@ screen_write_set_cursor(struct screen_write_ctx *ctx, int cx, int cy)
 			cy = screen_size_y(s) - 1;
 		s->cy = cy;
 	}
+	if (s->cx > screen_line_size_x(s, s->cy))
+		s->cx = screen_line_size_x(s, s->cy) - 1;
 
 	if (wp == NULL)
 		return;
@@ -1008,8 +1010,10 @@ screen_write_cursorright(struct screen_write_ctx *ctx, u_int nx)
 	if (nx == 0)
 		nx = 1;
 
-	if (nx > screen_size_x(s) - 1 - cx)
-		nx = screen_size_x(s) - 1 - cx;
+	if (cx > screen_line_size_x(s, cy) - 1)
+		return;
+	if (nx > screen_line_size_x(s, cy) - 1 - cx)
+		nx = screen_line_size_x(s, cy) - 1 - cx;
 	if (nx == 0)
 		return;
 
@@ -1052,7 +1056,7 @@ screen_write_backspace(struct screen_write_ctx *ctx)
 		gl = grid_get_line(s->grid, s->grid->hsize + cy - 1);
 		if (gl->flags & GRID_LINE_WRAPPED) {
 			cy--;
-			cx = screen_size_x(s) - 1;
+			cx = screen_line_size_x(s, cy) - 1;
 		}
 	} else
 		cx--;
@@ -1078,6 +1082,8 @@ screen_write_alignmenttest(struct screen_write_ctx *ctx)
 #endif
 
 	for (yy = 0; yy < screen_size_y(s); yy++) {
+		grid_get_line(s->grid, s->grid->hsize + yy)->flags &=
+		    ~GRID_LINE_SIZE;
 		for (xx = 0; xx < screen_size_x(s); xx++)
 			grid_view_set_cell(s->grid, xx, yy, &gc);
 	}
@@ -1091,6 +1097,33 @@ screen_write_alignmenttest(struct screen_write_ctx *ctx)
 
 	screen_write_collect_clear(ctx, 0, screen_size_y(s) - 1);
 	tty_write(tty_cmd_alignmenttest, &ttyctx);
+}
+
+/*
+ * Set the size of the cursor line (DECDHL, DECDWL, DECSWL). A double line
+ * holds half as many cells; those past the half are lost.
+ */
+void
+screen_write_linesize(struct screen_write_ctx *ctx, int size)
+{
+	struct screen		*s = ctx->s;
+	struct grid_line	*gl;
+	u_int			 sx = screen_size_x(s), half;
+
+	gl = grid_get_line(s->grid, s->grid->hsize + s->cy);
+	if ((gl->flags & GRID_LINE_SIZE) == size)
+		return;
+	screen_write_collect_flush(ctx, 0, __func__);
+
+	gl->flags = (gl->flags & ~GRID_LINE_SIZE) | size;
+	half = screen_line_size_x(s, s->cy);
+	if (half < sx)
+		grid_view_clear(s->grid, half, s->cy, sx - half, 1, 8);
+	if (s->cx > half - 1)
+		screen_write_set_cursor(ctx, half - 1, -1);
+
+	if (ctx->wp != NULL)
+		ctx->wp->flags |= PANE_REDRAW;
 }
 
 /* Insert nx characters. */
@@ -1308,6 +1341,7 @@ screen_write_clearline(struct screen_write_ctx *ctx, u_int bg)
 	struct grid_line		*gl;
 	u_int				 sx = screen_size_x(s);
 	struct screen_write_citem	*ci = ctx->item;
+	int				 size;
 
 	gl = grid_get_line(s->grid, s->grid->hsize + s->cy);
 	if (gl->cellsize == 0 && COLOUR_DEFAULT(bg))
@@ -1318,7 +1352,9 @@ screen_write_clearline(struct screen_write_ctx *ctx, u_int bg)
 		ctx->wp->flags |= PANE_REDRAW;
 #endif
 
+	size = gl->flags & GRID_LINE_SIZE;
 	grid_view_clear(s->grid, 0, s->cy, sx, 1, bg);
+	grid_get_line(s->grid, s->grid->hsize + s->cy)->flags |= size;
 
 	screen_write_collect_clear(ctx, s->cy, 1);
 	ci->x = 0;
@@ -1397,6 +1433,7 @@ screen_write_cursormove(struct screen_write_ctx *ctx, int px, int py,
     int origin)
 {
 	struct screen	*s = ctx->s;
+	u_int		 sx;
 
 	if (origin && py != -1 && (s->mode & MODE_ORIGIN)) {
 		if ((u_int)py > s->rlower - s->rupper)
@@ -1405,10 +1442,11 @@ screen_write_cursormove(struct screen_write_ctx *ctx, int px, int py,
 			py += s->rupper;
 	}
 
-	if (px != -1 && (u_int)px > screen_size_x(s) - 1)
-		px = screen_size_x(s) - 1;
 	if (py != -1 && (u_int)py > screen_size_y(s) - 1)
 		py = screen_size_y(s) - 1;
+	sx = screen_line_size_x(s, py == -1 ? s->cy : (u_int)py);
+	if (px != -1 && (u_int)px > sx - 1)
+		px = sx - 1;
 
 	log_debug("%s: from %u,%u to %u,%u", __func__, s->cx, s->cy, px, py);
 	screen_write_set_cursor(ctx, px, py);
@@ -1995,7 +2033,7 @@ screen_write_collect_add(struct screen_write_ctx *ctx,
 {
 	struct screen			*s = ctx->s;
 	struct screen_write_citem	*ci;
-	u_int				 sx = screen_size_x(s);
+	u_int				 sx = screen_line_size_x(s, s->cy);
 	int				 collect;
 
 	/*
@@ -2053,7 +2091,8 @@ screen_write_cell(struct screen_write_ctx *ctx, const struct grid_cell *gc)
 	struct grid_cell_entry	*gce;
 	struct grid_cell 	 tmp_gc, now_gc;
 	struct tty_ctx		 ttyctx;
-	u_int			 sx = screen_size_x(s), sy = screen_size_y(s);
+	u_int			 sx = screen_line_size_x(s, s->cy);
+	u_int			 sy = screen_size_y(s);
 	u_int		 	 width = ud->width, xx, not_wrap;
 	int			 selected, skip = 1, redraw = 0;
 
@@ -2086,6 +2125,7 @@ screen_write_cell(struct screen_write_ctx *ctx, const struct grid_cell *gc)
 		screen_write_linefeed(ctx, 1, 8);
 		screen_write_set_cursor(ctx, 0, -1);
 		screen_write_collect_flush(ctx, 0, __func__);
+		sx = screen_line_size_x(s, s->cy);
 	}
 
 	/* Sanity check cursor position. */

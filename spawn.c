@@ -105,8 +105,10 @@ spawn_log(const char *from, struct spawn_context *sc)
 	struct session		*s = sc->s;
 	struct winlink		*wl = sc->wl;
 	struct window_pane	*wp0 = sc->wp0;
-	const char		*name = cmdq_get_name(sc->item);
+	const char		*name;
 	char			 tmp[128];
+
+	name = sc->item != NULL ? cmdq_get_name(sc->item) : "server";
 
 	log_debug("%s: %s, flags=%#x", from, name, sc->flags);
 
@@ -126,7 +128,7 @@ struct winlink *
 spawn_window(struct spawn_context *sc, char **cause)
 {
 	struct cmdq_item	*item = sc->item;
-	struct client		*c = cmdq_get_client(item);
+	struct client		*c = item != NULL ? cmdq_get_client(item) : NULL;
 	struct session		*s = sc->s;
 	struct window		*w;
 	struct window_pane	*wp;
@@ -254,9 +256,9 @@ struct window_pane *
 spawn_pane(struct spawn_context *sc, char **cause)
 {
 	struct cmdq_item	 *item = sc->item;
-	struct cmd_find_state	 *target = cmdq_get_target(item);
-	struct client		 *c = cmdq_get_client(item);
+	struct client		 *c = item != NULL ? cmdq_get_client(item) : NULL;
 	struct session		 *s = sc->s;
+	struct session		 *ts = item != NULL ? cmdq_get_target(item)->s : s;
 	struct window		 *w = sc->wl->window;
 	struct window_pane	 *new_wp;
 	struct environ		 *child;
@@ -280,20 +282,20 @@ spawn_pane(struct spawn_context *sc, char **cause)
 	 * the pane's stored one unless specified.
 	 */
 	if (sc->cwd != NULL) {
-		cwd = format_single(item, sc->cwd, c, target->s, NULL, NULL);
+		cwd = format_single(item, sc->cwd, c, ts, NULL, NULL);
 #ifdef _WIN32
 		if (!win32_path_is_absolute(cwd)) {
 #else
 		if (*cwd != '/') {
 #endif
 			xasprintf(&new_cwd, "%s%s%s",
-			    server_client_get_cwd(c, target->s),
+			    server_client_get_cwd(c, ts),
 			    *cwd != '\0' ? "/" : "", cwd);
 			free(cwd);
 			cwd = new_cwd;
 		}
 	} else if (~sc->flags & SPAWN_RESPAWN)
-		cwd = xstrdup(server_client_get_cwd(c, target->s));
+		cwd = xstrdup(server_client_get_cwd(c, ts));
 	else
 		cwd = NULL;
 

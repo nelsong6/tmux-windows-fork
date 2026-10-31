@@ -703,6 +703,15 @@ const struct options_table_entry options_table[] = {
 		  "Key presses are first looked up in this table."
 	},
 
+	{ .name = "keep-alive-window",
+	  .type = OPTIONS_TABLE_STRING,
+	  .scope = OPTIONS_TABLE_SESSION,
+	  .default_str = "",
+	  .text = "Name of a window with the default command to open when the "
+		  "session's last window closes, so the session stays; empty "
+		  "to let the session end."
+	},
+
 	{ .name = "lock-after-time",
 	  .type = OPTIONS_TABLE_NUMBER,
 	  .scope = OPTIONS_TABLE_SESSION,

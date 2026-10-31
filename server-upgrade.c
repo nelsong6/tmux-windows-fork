@@ -1107,6 +1107,7 @@ upgrade_restore_client(struct upgrade_reader *r)
 			return;
 		}
 		tty_set_size(&c->tty, sx, sy, xpixel, ypixel);
+		c->tty.flags |= TTY_INHERITED;
 		c->flags |= CLIENT_TERMINAL;
 	}
 	if (o.error) {
@@ -1742,7 +1743,16 @@ server_upgrade_restore(void)
 	options_upgrade_restore(&r, global_options);
 	options_upgrade_restore(&r, global_s_options);
 	options_upgrade_restore(&r, global_w_options);
+	/*
+	 * The old server's global environment replaces the one built from this
+	 * process's environment at startup, which holds what was removed since.
+	 * TMUX_UPGRADE is in the state of a server an older build took over:
+	 * panes must not inherit it.
+	 */
+	environ_free(global_environ);
+	global_environ = environ_create();
 	upgrade_restore_environ(&r, global_environ);
+	environ_unset(global_environ, "TMUX_UPGRADE");
 	upgrade_restore_keys(&r);
 	paste_upgrade_restore(&r);
 	if (r.error) {

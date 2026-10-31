@@ -762,6 +762,11 @@ struct colour_palette {
 #define GRID_LINE_DEAD 0x4
 #define GRID_LINE_START_PROMPT 0x8
 #define GRID_LINE_START_OUTPUT 0x10
+#define GRID_LINE_DOUBLE_WIDTH 0x20
+#define GRID_LINE_DOUBLE_TOP 0x40
+#define GRID_LINE_DOUBLE_BOTTOM 0x80
+#define GRID_LINE_SIZE \
+	(GRID_LINE_DOUBLE_WIDTH|GRID_LINE_DOUBLE_TOP|GRID_LINE_DOUBLE_BOTTOM)
 
 /* Grid string flags. */
 #define GRID_STRING_WITH_SEQUENCES 0x1
@@ -1329,6 +1334,7 @@ struct window {
 #define WINDOW_ZOOMED 0x8
 #define WINDOW_WASZOOMED 0x10
 #define WINDOW_RESIZE 0x20
+#define WINDOW_KEEPALIVE 0x40
 #define WINDOW_ALERTFLAGS (WINDOW_BELL|WINDOW_ACTIVITY|WINDOW_SILENCE)
 
 	int			 alerts_queued;
@@ -1631,6 +1637,10 @@ struct tty {
 	struct grid_cell cell;
 	struct grid_cell last_cell;
 
+	/* Line size (GRID_LINE_SIZE) of each terminal row, once one is used. */
+	int		*line_sizes;
+	u_int		 line_sizes_sy;
+
 #define TTY_NOCURSOR 0x1
 #define TTY_FREEZE 0x2
 #define TTY_TIMER 0x4
@@ -1646,6 +1656,8 @@ struct tty {
 #define TTY_WINSIZEQUERY 0x1000
 #define TTY_WAITFG 0x2000
 #define TTY_WAITBG 0x4000
+#define TTY_LINESIZED 0x8000
+#define TTY_INHERITED 0x10000
 #define TTY_ALL_REQUEST_FLAGS \
 	(TTY_HAVEDA|TTY_HAVEDA2|TTY_HAVEXDA)
 	int		 flags;
@@ -2611,6 +2623,8 @@ void	tty_putcode_s(struct tty *, enum tty_code_code, const char *);
 void	tty_putcode_ss(struct tty *, enum tty_code_code, const char *,
 	    const char *);
 void	tty_puts(struct tty *, const char *);
+int	tty_get_line_size(struct tty *, u_int);
+void	tty_set_line_size(struct tty *, u_int, int);
 void	tty_putc(struct tty *, u_char);
 void	tty_putn(struct tty *, const void *, size_t, u_int);
 void	tty_cell(struct tty *, const struct grid_cell *,
@@ -3257,6 +3271,7 @@ void	 screen_write_cursordown(struct screen_write_ctx *, u_int);
 void	 screen_write_cursorright(struct screen_write_ctx *, u_int);
 void	 screen_write_cursorleft(struct screen_write_ctx *, u_int);
 void	 screen_write_alignmenttest(struct screen_write_ctx *);
+void	 screen_write_linesize(struct screen_write_ctx *, int);
 void	 screen_write_insertcharacter(struct screen_write_ctx *, u_int, u_int);
 void	 screen_write_deletecharacter(struct screen_write_ctx *, u_int, u_int);
 void	 screen_write_clearcharacter(struct screen_write_ctx *, u_int, u_int);
@@ -3308,6 +3323,7 @@ void	 screen_set_default_cursor(struct screen *, struct options *);
 void	 screen_set_cursor_style(u_int, enum screen_cursor_style *, int *);
 void	 screen_set_cursor_colour(struct screen *, int);
 int	 screen_set_title(struct screen *, const char *);
+u_int	 screen_line_size_x(struct screen *, u_int);
 void	 screen_set_path(struct screen *, const char *);
 void	 screen_push_title(struct screen *);
 void	 screen_pop_title(struct screen *);
