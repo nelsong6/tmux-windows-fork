@@ -39,12 +39,13 @@ public static class Fg {
         return SendInput((uint)keys.Length, keys, Marshal.SizeOf(typeof(INPUT)));
     }
     public static IntPtr Window() {
-        // WS_OVERLAPPEDWINDOW | WS_VISIBLE, WS_EX_TOPMOST
-        return CreateWindowExW(0x8, "STATIC", "fzt64-foreground", 0x10CF0000, 100, 100, 300, 200, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+        // WS_POPUP | WS_VISIBLE, WS_EX_TOPMOST: no system menu, so the Alt
+        // press below can't open a modal menu loop.
+        return CreateWindowExW(0x8, "STATIC", "fzt64-foreground", 0x90000000, 100, 100, 300, 200, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
     }
     public static void Pump() {
         MSG m;
-        while (PeekMessage(out m, IntPtr.Zero, 0, 0, 1)) { TranslateMessage(ref m); DispatchMessage(ref m); }
+        for (int i = 0; i < 100 && PeekMessage(out m, IntPtr.Zero, 0, 0, 1); i++) { TranslateMessage(ref m); DispatchMessage(ref m); }
     }
     public static uint Owner() {
         uint pid = 0;
