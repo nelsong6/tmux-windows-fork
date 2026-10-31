@@ -123,7 +123,7 @@ osdep_event_init(void)
  * the server runs on.
  */
 int
-win32_modifiers_held(key_code modifiers)
+desktop_modifiers_held(key_code modifiers)
 {
 	if ((modifiers & KEYC_CTRL) && !(GetAsyncKeyState(VK_CONTROL) & 0x8000))
 		return (0);
@@ -212,9 +212,12 @@ win32_global_keys_read(evutil_socket_t fd, __unused short events,
 		key_bindings_global(key);
 }
 
-/* Start the hook, once, when the global table first gets a key. */
+/*
+ * Start the hook, once, when the global table first gets a key. The hook sees
+ * every key, so there is nothing to do for each one.
+ */
 void
-win32_global_keys_start(void)
+desktop_global_key_add(__unused key_code key)
 {
 	int	sv[2];
 	HANDLE	thread;
@@ -231,6 +234,12 @@ win32_global_keys_start(void)
 	thread = CreateThread(NULL, 0, win32_global_keys_thread, NULL, 0, NULL);
 	if (thread != NULL)
 		CloseHandle(thread);
+}
+
+/* The hook sees every key, so a key leaving the global table changes nothing. */
+void
+desktop_global_key_remove(__unused key_code key)
+{
 }
 
 #endif /* _WIN32 */

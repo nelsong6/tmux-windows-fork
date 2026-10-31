@@ -1,11 +1,12 @@
 # Obvious program stuff.
 bin_PROGRAMS = tmux
-CLEANFILES = tmux.1.mdoc tmux.1.man cmd-parse.c
+CLEANFILES = tmux.1.mdoc tmux.1.man cmd-parse.c \
+	palette-descriptions palette-descriptions.h
 
 # Distribution tarball options.
 EXTRA_DIST = \
 	CHANGES README README.ja COPYING example_tmux.conf \
-	osdep-*.c mdoc2man.awk tmux.1
+	osdep-*.c mdoc2man.awk tmux.1 tools/palette-descriptions.c
 dist_EXTRA_tmux_SOURCES = compat/*.[ch]
 
 # Preprocessor flags.
@@ -95,6 +96,7 @@ dist_tmux_SOURCES = \
 	cmd-detach-client.c \
 	cmd-display-menu.c \
 	cmd-display-message.c \
+	cmd-display-palette.c \
 	cmd-display-panes.c \
 	cmd-find-window.c \
 	cmd-find.c \
@@ -217,9 +219,22 @@ dist_tmux_SOURCES = \
 	xmalloc.h
 nodist_tmux_SOURCES = osdep-@PLATFORM@.c
 
+# display-palette's command descriptions, from tmux.1, by a tool built for
+# the build host.
+BUILT_SOURCES = palette-descriptions.h
+palette-descriptions.h: $(srcdir)/tools/palette-descriptions.c $(srcdir)/tmux.1
+	$(CC) -o palette-descriptions $(srcdir)/tools/palette-descriptions.c
+	./palette-descriptions $(srcdir)/tmux.1 $@
+
 # Add compat file for forkpty.
 if NEED_FORKPTY
 nodist_tmux_SOURCES += compat/forkpty-@PLATFORM@.c
+endif
+
+# The desktop's keyboard on macOS: held modifiers and global keys.
+if IS_DARWIN
+dist_tmux_SOURCES += osdep-darwin-keys.c
+AM_LDFLAGS += -framework Carbon -framework ApplicationServices
 endif
 
 # Add compat file for systemd.

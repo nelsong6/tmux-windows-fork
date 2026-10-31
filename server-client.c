@@ -355,8 +355,8 @@ server_client_hold_timer(__unused int fd, __unused short events, void *data)
 	struct client	*c = data;
 	struct cmd_list	*release;
 
-#ifdef _WIN32
-	if (win32_modifiers_held(c->hold_modifiers)) {
+#ifdef HAVE_DESKTOP_KEYBOARD
+	if (desktop_modifiers_held(c->hold_modifiers)) {
 		server_client_poll_hold(c);
 		return;
 	}

@@ -52,6 +52,8 @@ CI runs 13 test scripts from `regress/`:
 - `win32-palette.sh` — `display-palette`'s rows and what a pick runs; `win32-palette-pick.ps1` stands in for fzt, and keys reach the pseudo-console client with `send-keys -K`
 - `win32-upgrade.sh` — `upgrade-server` hands a server with an attached client (unfocused, its pane asking for focus reports) to another process without restarting its panes, waits while copy mode is open, and carries on when the new build fails (5 tests; runs beside `conpty.dll`)
 
+CI's `macos` job builds with tmux's own Unix build (`sh autogen.sh && ./configure --enable-utf8proc && make`, Homebrew's autoconf, automake, pkgconf, libevent and utf8proc) for the work Mac, and runs `regress/palette.sh` (the palette tests, client attached from a pane of a second server, `palette-pick.sh` for fzt) and `regress/hold.sh` (`switch-client -H`/`-R`). The macOS keyboard (held modifiers, the global table as registered hotkeys) is `osdep-darwin-keys.c`; the build is the `tmux-macos` artifact.
+
 They wait with `regress/win32-wait.sh` (poll until a condition holds, fail after 10 s), not fixed sleeps. Match a command's output with `^`: the typed command line holds the same text.
 
 ## Publishing

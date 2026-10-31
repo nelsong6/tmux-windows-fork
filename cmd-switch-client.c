@@ -61,7 +61,7 @@ cmd_switch_client_exec(struct cmd *self, struct cmdq_item *item)
 	const char		*tablename;
 	struct key_table	*table;
 	struct sort_criteria	 sort_crit;
-#ifdef _WIN32
+#ifdef HAVE_DESKTOP_KEYBOARD
 	struct key_event	*event;
 	key_code		 modifiers = 0;
 	struct cmd_parse_result	*pr;
@@ -101,7 +101,7 @@ cmd_switch_client_exec(struct cmd *self, struct cmdq_item *item)
 			return (CMD_RETURN_ERROR);
 		}
 		if (args_has(args, 'H')) {
-#ifdef _WIN32
+#ifdef HAVE_DESKTOP_KEYBOARD
 			event = cmdq_get_event(item);
 			modifiers = event->key & (KEYC_CTRL|KEYC_META|KEYC_SHIFT);
 			if (modifiers == 0) {
@@ -119,7 +119,7 @@ cmd_switch_client_exec(struct cmd *self, struct cmdq_item *item)
 				release = pr->cmdlist;
 			}
 #else
-			cmdq_error(item, "-H is only supported on Windows");
+			cmdq_error(item, "-H is only supported on Windows and macOS");
 			return (CMD_RETURN_ERROR);
 #endif
 		}
@@ -127,7 +127,7 @@ cmd_switch_client_exec(struct cmd *self, struct cmdq_item *item)
 		table->references++;
 		key_bindings_unref_table(tc->keytable);
 		tc->keytable = table;
-#ifdef _WIN32
+#ifdef HAVE_DESKTOP_KEYBOARD
 		if (args_has(args, 'H'))
 			server_client_hold_key_table(tc, modifiers, release);
 #endif
