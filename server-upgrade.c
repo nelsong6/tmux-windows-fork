@@ -702,7 +702,8 @@ upgrade_restore_pane(struct upgrade_reader *r, struct window *w)
 	wp->sy = upr_u32(&o);
 	wp->xoff = upr_u32(&o);
 	wp->yoff = upr_u32(&o);
-	wp->flags = (upr_u32(&o) & ~PANE_VISITED) | PANE_REDRAW;
+	/* Its cached default style is this process's to work out again. */
+	wp->flags = (upr_u32(&o) & ~PANE_VISITED) | PANE_REDRAW|PANE_STYLECHANGED;
 	wp->argc = upr_u32(&o);
 	if (wp->argc < 0 || (size_t)wp->argc > o.left)
 		o.error = 1;
@@ -1090,6 +1091,13 @@ upgrade_save_client(struct evbuffer *evb, struct client *c,
 	upw_u32(o, (c->flags & CLIENT_CONTROL) != 0);
 	if (c->flags & CLIENT_CONTROL)
 		control_upgrade_save(o, c);
+	/*
+	 * The colours the terminal reported, which a pane asking for its own
+	 * (OSC 10 and 11) is told; written one up so an older writer's zero
+	 * reads as unknown.
+	 */
+	upw_u32(o, (uint32_t)(c->tty.fg + 1));
+	upw_u32(o, (uint32_t)(c->tty.bg + 1));
 	upw_obj(evb, o);
 	evbuffer_free(o);
 	return (0);
@@ -1196,6 +1204,8 @@ upgrade_restore_client(struct upgrade_reader *r)
 		c->tty.flags |= TTY_INHERITED;
 		c->flags |= CLIENT_TERMINAL;
 	}
+	c->tty.fg = (int)upr_u32(&o) - 1;
+	c->tty.bg = (int)upr_u32(&o) - 1;
 	if (o.error) {
 		r->error = 1;
 		return;
@@ -1745,7 +1755,7 @@ upgrade_spawn(int state, int ack, char **cause)
 		argv[argc++] = (char *)"-v";
 	argv[argc++] = (char *)"-D";
 	argv[argc++] = (char *)"-S";
-	argv[argc++] = socket_path;
+	argv[argc++] = (char *)socket_path;
 	argv[argc] = NULL;
 
 	switch (pid = fork()) {
@@ -2232,8 +2242,12 @@ server_upgrade_restore(void)
 	}
 #endif
 	recalculate_sizes();
-	TAILQ_FOREACH(c, &clients, entry)
+	TAILQ_FOREACH(c, &clients, entry) {
 		server_redraw_client(c);
+		/* Ask each terminal again for what it reports, its colours too. */
+		if (c->flags & CLIENT_TERMINAL)
+			tty_send_requests(&c->tty);
+	}
 	server_upgrading = 0;
 	RB_FOREACH(w, windows, &windows)
 		window_update_focus(w);

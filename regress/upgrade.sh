@@ -84,6 +84,8 @@ $OUTER send-keys -tout "unset TMUX; $EXE -Lupgtest attach -tup" Enter
 wait_until client_count_is 1 || { fail "client never attached"; exit 1; }
 wait_until outer_has BEFORE_MARK || fail "client never drew the pane"
 
+COLOURS0=$($TMUX display -tup:0.0 -p '#{pane_fg} #{pane_bg}')
+
 PID0=$(server_pid)
 pane_pids >$OUT
 PANES0=$(cat $OUT)
@@ -101,7 +103,12 @@ $TMUX list-keys -T root F12 | grep -q f12-bound || fail "key binding lost"
 [ "$($TMUX display -tup:1 -p '#{window_name}')" = second ] ||
 	fail "window name lost"
 client_count_is 1 || fail "client lost"
-echo "PASS 1: upgrade keeps panes, screens, options, buffers, keys and client"
+# A pane's default colours are worked out again, not left as zeroes (black
+# on black), once the new server has settled.
+sleep 2.5
+[ "$($TMUX display -tup:0.0 -p '#{pane_fg} #{pane_bg}')" = "$COLOURS0" ] ||
+	fail "pane colours changed: $($TMUX display -tup:0.0 -p '#{pane_fg} #{pane_bg}'), were $COLOURS0"
+echo "PASS 1: upgrade keeps panes, screens, options, buffers, keys, client and pane colours"
 
 # --- Test 1b: the environment is the one before, less TMUX_UPGRADE ---
 $TMUX show-environment -g TMUX_UPGRADE >/dev/null 2>&1 &&
