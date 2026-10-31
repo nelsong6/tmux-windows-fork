@@ -56,6 +56,7 @@ set(TMUX_SOURCES
     cfg.c
     client.c
     cmd.c
+    cmd-adopt-pane.c
     cmd-attach-session.c
     cmd-bind-key.c
     cmd-break-pane.c

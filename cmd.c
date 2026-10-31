@@ -33,6 +33,7 @@
 
 #include "tmux.h"
 
+extern const struct cmd_entry cmd_adopt_pane_entry;
 extern const struct cmd_entry cmd_attach_session_entry;
 extern const struct cmd_entry cmd_bind_key_entry;
 extern const struct cmd_entry cmd_break_pane_entry;
@@ -127,6 +128,7 @@ extern const struct cmd_entry cmd_upgrade_server_entry;
 extern const struct cmd_entry cmd_wait_for_entry;
 
 const struct cmd_entry *cmd_table[] = {
+	&cmd_adopt_pane_entry,
 	&cmd_attach_session_entry,
 	&cmd_bind_key_entry,
 	&cmd_break_pane_entry,
