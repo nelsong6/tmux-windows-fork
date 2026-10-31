@@ -3690,10 +3690,10 @@ char		*win32_pane_command(pid_t);
 
 /*
  * The keyboard of the desktop the server runs on (osdep-windows.c,
- * osdep-darwin-keys.c): held modifiers for switch-client -H, and the global
- * key table.
+ * osdep-darwin-keys.c, osdep-linux-keys.c): held modifiers for
+ * switch-client -H, and the global key table.
  */
-#if defined(_WIN32) || defined(__APPLE__)
+#if defined(_WIN32) || defined(__APPLE__) || defined(__linux__)
 #define HAVE_DESKTOP_KEYBOARD
 int		 desktop_modifiers_held(key_code);
 void		 desktop_global_key_add(key_code);

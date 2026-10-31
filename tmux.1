@@ -1722,9 +1722,9 @@ bind-key -Troot   a switch-client -Ttable1
 .Pp
 With
 .Fl H
-(Windows and macOS), the key table also ends when the modifiers of the key that ran
-the command (Ctrl, Alt or Shift) are released, so a chord lasts only while
-they are held.
+(Windows, macOS and Linux), the key table also ends when the modifiers of the
+key that ran the command (Ctrl, Alt or Shift) are released, so a chord lasts
+only while they are held.
 .Fl R
 gives a command to run when they are released; a key that ends the table
 first does not run it.
@@ -3757,8 +3757,8 @@ Shift keys with
 .Ql S-
 and Alt (meta) with
 .Ql M- .
-On Windows, keys pressed with the Windows key, and on macOS with the Command
-key, may be prefixed with
+On Windows, keys pressed with the Windows key, on macOS with the Command
+key, and on Linux with the Super key, may be prefixed with
 .Ql W-
 and bound in the
 .Em global
@@ -3850,15 +3850,23 @@ Keys may also be bound in custom key tables and the
 .Ic switch-client
 .Fl T
 command used to switch to them from a key binding.
-On Windows and macOS, the
+On Windows, macOS and Linux, the
 .Em global
-table holds keys pressed with the Windows key (macOS: the Command key)
+table holds keys pressed with the Windows key (macOS: the Command key;
+Linux: the Super key)
 anywhere on the desktop, not just in a terminal, for example
 .Ql W-\(ga
 (Win+\(ga or Cmd+\(ga).
 On macOS each key bound there is registered with the system as a hotkey, so
 no other program sees it while it is bound, and only letters, digits and the
 unshifted punctuation of a US layout can be bound.
+On Linux
+.Nm
+reads the keyboards in
+.Pa /dev/input ,
+which needs the user in the
+.Em input
+group; without it no modifier is held and the table sees nothing.
 Its commands run for the most recently active client; a server with no
 attached client ignores them.
 Only keys that type a character are seen, with
