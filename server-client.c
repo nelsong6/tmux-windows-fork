@@ -598,6 +598,7 @@ server_client_lost(struct client *c)
 
 	status_free(c);
 	input_cancel_requests(c);
+	new_window_draw_client_lost(c);
 
 	free(c->title);
 	free((void *)c->cwd);

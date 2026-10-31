@@ -324,6 +324,11 @@ server_destroy_pane(struct window_pane *wp, int notify)
 	u_int			 sx = screen_size_x(&wp->base);
 	u_int			 sy = screen_size_y(&wp->base);
 
+	/* What it wrote before exiting may not have been parsed yet. */
+	if (wp->draw_wait != NULL && wp->event != NULL)
+		input_parse_pane(wp);
+	new_window_draw_end(wp, "exited before drawing");
+
 	if (wp->fd != -1) {
 #ifdef HAVE_UTEMPTER
 		utempter_remove_record(wp->fd);

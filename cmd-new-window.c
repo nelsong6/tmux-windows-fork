@@ -40,16 +40,145 @@ const struct cmd_entry cmd_new_window_entry = {
 	.name = "new-window",
 	.alias = "neww",
 
-	.args = { "abc:de:F:kn:PSt:", 0, -1, NULL },
+	.args = { "abc:de:F:kn:PSt:W:", 0, -1, NULL },
 	.usage = "[-abdkPS] [-c start-directory] [-e environment] [-F format] "
 		 "[-n window-name] " CMD_TARGET_WINDOW_USAGE
-		 " [shell-command [argument ...]]",
+		 " [-W target-client] [shell-command [argument ...]]",
 
 	.target = { 't', CMD_FIND_WINDOW, CMD_FIND_WINDOW_INDEX },
 
 	.flags = 0,
 	.exec = cmd_new_window_exec
 };
+
+/*
+ * new-window -W: the window opens in the background and a client is switched
+ * to it once its pane has drawn something, so the client never shows a blank
+ * pane while the program starts. The command waits until then. A pane that
+ * exits or is closed first fails the command and switches nothing; the
+ * waiting command's client going away drops the wait. Nothing is kept once it
+ * ends, and upgrade-server waits while one is pending.
+ */
+struct new_window_draw {
+	struct cmdq_item		*item;
+	struct window_pane		*wp;
+	struct client			*tc;	/* referenced */
+	u_int				 session;
+
+	TAILQ_ENTRY(new_window_draw)	 entry;
+};
+static TAILQ_HEAD(, new_window_draw) new_window_draws =
+    TAILQ_HEAD_INITIALIZER(new_window_draws);
+
+/*
+ * Has the pane drawn anything? Its visible screen has a cell that isn't a
+ * space. A new console's own setup (clearing the screen, a title, moving the
+ * cursor) leaves it blank.
+ */
+static int
+new_window_drawn(struct window_pane *wp)
+{
+	struct grid		*gd = wp->base.grid;
+	const struct grid_line	*gl;
+	struct grid_cell	 gc;
+	u_int			 x, y;
+
+	for (y = gd->hsize; y < gd->hsize + gd->sy; y++) {
+		gl = grid_peek_line(gd, y);
+		for (x = 0; x < gl->cellused; x++) {
+			grid_get_cell(gd, x, y, &gc);
+			if (gc.flags & GRID_FLAG_PADDING)
+				continue;
+			if (gc.data.size != 1 || *gc.data.data != ' ')
+				return (1);
+		}
+	}
+	return (0);
+}
+
+static void
+new_window_switch(struct client *tc, struct session *s, struct winlink *wl)
+{
+	session_set_current(s, wl);
+	environ_update(s->options, tc->environ, s->environ);
+	server_client_set_session(tc, s);
+}
+
+static void
+new_window_draw_free(struct new_window_draw *nwd)
+{
+	nwd->wp->draw_wait = NULL;
+	TAILQ_REMOVE(&new_window_draws, nwd, entry);
+	server_client_unref(nwd->tc);
+	free(nwd);
+}
+
+/* After a pane's output is parsed: switch the client if it has drawn. */
+void
+new_window_draw_check(struct window_pane *wp)
+{
+	struct new_window_draw	*nwd = wp->draw_wait;
+	struct cmdq_item	*item;
+	struct session		*s;
+	struct winlink		*wl = NULL;
+
+	if (nwd == NULL || !new_window_drawn(wp))
+		return;
+	item = nwd->item;
+
+	if ((s = session_find_by_id(nwd->session)) != NULL)
+		wl = winlink_find_by_window(&s->windows, wp->window);
+	if (wl == NULL)
+		cmdq_error(item, "window @%u left its session", wp->window->id);
+	else if (nwd->tc->flags & CLIENT_DEAD)
+		cmdq_error(item, "client %s has gone", nwd->tc->name);
+	else
+		new_window_switch(nwd->tc, s, wl);
+	log_debug("%s: %%%u drew", __func__, wp->id);
+
+	new_window_draw_free(nwd);
+	cmdq_continue(item);
+}
+
+/* The pane is going before it drew: fail the command. */
+void
+new_window_draw_end(struct window_pane *wp, const char *why)
+{
+	struct new_window_draw	*nwd = wp->draw_wait;
+	struct cmdq_item	*item;
+
+	if (nwd == NULL)
+		return;
+	item = nwd->item;
+	log_debug("%s: %%%u %s", __func__, wp->id, why);
+	cmdq_error(item, "pane %%%u %s", wp->id, why);
+	new_window_draw_free(nwd);
+	cmdq_continue(item);
+}
+
+/*
+ * A client has gone: a wait it was running is given up, and one that would
+ * switch it fails.
+ */
+void
+new_window_draw_client_lost(struct client *c)
+{
+	struct new_window_draw	*nwd, *nwd1;
+	struct cmdq_item	*item;
+
+	TAILQ_FOREACH_SAFE(nwd, &new_window_draws, entry, nwd1) {
+		item = nwd->item;
+		if (cmdq_get_client(item) == c) {
+			log_debug("%s: %%%u given up", __func__, nwd->wp->id);
+			new_window_draw_free(nwd);
+			cmdq_continue(item);
+		} else if (nwd->tc == c) {
+			cmdq_error(item, "client %s has gone", c->name);
+			new_window_draw_free(nwd);
+			cmdq_continue(item);
+		}
+	}
+}
 
 static enum cmd_retval
 cmd_new_window_exec(struct cmd *self, struct cmdq_item *item)
@@ -67,6 +196,20 @@ cmd_new_window_exec(struct cmd *self, struct cmdq_item *item)
 	const char		*template, *name;
 	struct cmd_find_state	 fs;
 	struct args_value	*av;
+	struct client		*wc = NULL;
+	struct new_window_draw	*nwd;
+	int			 detached;
+
+	if (args_has(args, 'W')) {
+		wc = cmd_find_client(item, args_get(args, 'W'), 0);
+		if (wc == NULL)
+			return (CMD_RETURN_ERROR);
+		if (wc->session == NULL) {
+			cmdq_error(item, "client %s is not attached", wc->name);
+			return (CMD_RETURN_ERROR);
+		}
+	}
+	detached = args_has(args, 'd') || wc != NULL;
 
 	/*
 	 * If -S and -n are given and -t is not and a single window with this
@@ -88,6 +231,10 @@ cmd_new_window_exec(struct cmd *self, struct cmdq_item *item)
 		}
 		free(expanded);
 		if (new_wl != NULL) {
+			if (wc != NULL) {
+				new_window_switch(wc, s, new_wl);
+				return (CMD_RETURN_NORMAL);
+			}
 			if (args_has(args, 'd'))
 				return (CMD_RETURN_NORMAL);
 			if (session_set_current(s, new_wl) == 0)
@@ -124,7 +271,7 @@ cmd_new_window_exec(struct cmd *self, struct cmdq_item *item)
 	sc.cwd = args_get(args, 'c');
 
 	sc.flags = 0;
-	if (args_has(args, 'd'))
+	if (detached)
 		sc.flags |= SPAWN_DETACHED;
 	if (args_has(args, 'k'))
 		sc.flags |= SPAWN_KILL;
@@ -137,7 +284,7 @@ cmd_new_window_exec(struct cmd *self, struct cmdq_item *item)
 		environ_free(sc.environ);
 		return (CMD_RETURN_ERROR);
 	}
-	if (!args_has(args, 'd') || new_wl == s->curw) {
+	if (!detached || new_wl == s->curw) {
 		cmd_find_from_winlink(current, new_wl, 0);
 		server_redraw_session_group(s);
 	} else
@@ -158,5 +305,17 @@ cmd_new_window_exec(struct cmd *self, struct cmdq_item *item)
 	if (sc.argv != NULL)
 		cmd_free_argv(sc.argc, sc.argv);
 	environ_free(sc.environ);
+
+	if (wc != NULL) {
+		nwd = xcalloc(1, sizeof *nwd);
+		nwd->item = item;
+		nwd->wp = new_wl->window->active;
+		nwd->tc = wc;
+		wc->references++;
+		nwd->session = s->id;
+		TAILQ_INSERT_TAIL(&new_window_draws, nwd, entry);
+		nwd->wp->draw_wait = nwd;
+		return (CMD_RETURN_WAIT);
+	}
 	return (CMD_RETURN_NORMAL);
 }

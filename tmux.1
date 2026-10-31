@@ -3246,6 +3246,7 @@ option.
 .Op Fl F Ar format
 .Op Fl n Ar window-name
 .Op Fl t Ar target-window
+.Op Fl W Ar target-client
 .Op Ar shell-command Op Ar argument ...
 .Xc
 .D1 Pq alias: Ic neww
@@ -3321,6 +3322,30 @@ By default, it uses the format
 .Ql #{session_name}:#{window_index}
 but a different format may be specified with
 .Fl F .
+.Pp
+.Fl W
+creates the window in the background, as
+.Fl d
+does, and switches
+.Ar target-client
+to it once its pane has drawn something: once the pane's visible screen has a
+character other than a space.
+The setup a new console does before its program writes anything (on Windows,
+ConPTY clears the screen, sets a title and moves the cursor) leaves it blank,
+so the client goes on showing what it was until the program's first prompt or
+frame is there.
+The command waits until then and succeeds; if the pane's program exits, or the
+pane is closed, before drawing, it fails with an error and switches nothing.
+Killing the client running the command gives up the wait, and the window is
+left as it is.
+If
+.Ar target-client
+goes away first, the command fails.
+With
+.Fl S
+and an existing window, the client is switched to it at once.
+.Ic upgrade-server
+waits while a pane is waiting to draw.
 .Tg nextl
 .It Ic next-layout Op Fl t Ar target-window
 .D1 Pq alias: Ic nextl
@@ -3908,6 +3933,23 @@ for any other modifiers held.
 .Nm
 watches the keyboard only once the table has a key, and passes every key on,
 so other programs still receive it.
+On Windows, a binding in the
+.Em global
+table can tell whether the terminal showing that client was the foreground
+window when the key was pressed:
+.Ql #{global_key_terminal_foreground}
+is 1 if the window in the foreground then belonged to a process the client
+runs under (such as Windows Terminal, through the
+.Pa cmd.exe
+that started
+.Nm ) ,
+otherwise 0.
+A client in a console window of its own (conhost) always gets 0.
+It is empty on macOS and Linux.
+For example, to show a window only when the terminal already had the focus:
+.Bd -literal -offset indent
+bind -T global W-\(ga if -F \(aq#{global_key_terminal_foreground}\(aq \(aqselect-window -t at\(aq
+.Ed
 The
 .Fl r
 flag indicates this key may repeat, see the
@@ -6339,6 +6381,7 @@ The following variables are available, where appropriate:
 .It Li "cursor_very_visible" Ta "" Ta "1 if the cursor is in very visible mode"
 .It Li "cursor_x" Ta "" Ta "Cursor X position in pane"
 .It Li "cursor_y" Ta "" Ta "Cursor Y position in pane"
+.It Li "global_key_terminal_foreground" Ta "" Ta "1 if the client's terminal had the focus when a global key was pressed"
 .It Li "history_bytes" Ta "" Ta "Number of bytes in window history"
 .It Li "history_limit" Ta "" Ta "Maximum window history lines"
 .It Li "history_size" Ta "" Ta "Size of history in lines"

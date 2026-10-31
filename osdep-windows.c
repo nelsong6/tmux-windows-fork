@@ -97,6 +97,57 @@ win32_pane_command(pid_t pid)
 }
 
 /*
+ * Does pid descend from ancestor, or is it ancestor? Each parent must have
+ * started before its child, or the child's parent pid was reused by a later
+ * process and the chain ends there.
+ */
+int
+win32_pid_descends(pid_t pid, pid_t ancestor)
+{
+	HANDLE		 snap;
+	PROCESSENTRY32W	 pe;
+	DWORD		 cur, parent;
+	ULONGLONG	 cur_start, parent_start;
+	int		 found, depth;
+
+	if (pid <= 0 || ancestor <= 0)
+		return (0);
+	if (pid == ancestor)
+		return (1);
+	snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+	if (snap == INVALID_HANDLE_VALUE)
+		return (0);
+	cur = (DWORD)pid;
+	cur_start = win32_process_start(cur);
+	for (depth = 0; depth < 64; depth++) {
+		found = 0;
+		pe.dwSize = sizeof pe;
+		for (BOOL ok = Process32FirstW(snap, &pe); ok;
+		    ok = Process32NextW(snap, &pe)) {
+			if (pe.th32ProcessID == cur) {
+				found = 1;
+				break;
+			}
+		}
+		if (!found || (parent = pe.th32ParentProcessID) == 0 ||
+		    parent == cur)
+			break;
+		parent_start = win32_process_start(parent);
+		if (parent_start == 0 ||
+		    (cur_start != 0 && parent_start > cur_start))
+			break;
+		if (parent == (DWORD)ancestor) {
+			CloseHandle(snap);
+			return (1);
+		}
+		cur = parent;
+		cur_start = parent_start;
+	}
+	CloseHandle(snap);
+	return (0);
+}
+
+/*
  * A process's working directory sits in its PEB, and pwsh's Set-Location
  * doesn't change it anyway; format.c falls back to the folder the pane
  * reports itself (OSC 7).
@@ -145,6 +196,18 @@ static SOCKET		global_keys[2] = { INVALID_SOCKET, INVALID_SOCKET };
 static struct event	global_keys_event;
 static DWORD		global_keys_down; /* held key, to skip auto-repeat */
 
+/*
+ * What the hook sends for each key: the key, and the process owning the
+ * window in the foreground when it was pressed (0 if none). A low-level hook
+ * that takes long is skipped by Windows, so the hook only asks for the
+ * window's process; key_bindings_global works out whether it is the client's
+ * terminal.
+ */
+struct win32_global_key {
+	key_code	key;
+	DWORD		foreground;
+};
+
 /* The key a virtual key types, unshifted, with the modifiers held. */
 static key_code
 win32_global_key(DWORD vk)
@@ -168,8 +231,9 @@ win32_global_key(DWORD vk)
 static LRESULT CALLBACK
 win32_global_keys_hook(int code, WPARAM wp, LPARAM lp)
 {
-	KBDLLHOOKSTRUCT	*k = (KBDLLHOOKSTRUCT *)lp;
-	key_code	 key;
+	KBDLLHOOKSTRUCT		*k = (KBDLLHOOKSTRUCT *)lp;
+	struct win32_global_key	 gk;
+	HWND			 fg;
 
 	if (code != HC_ACTION)
 		return (CallNextHookEx(NULL, code, wp, lp));
@@ -178,10 +242,13 @@ win32_global_keys_hook(int code, WPARAM wp, LPARAM lp)
 			global_keys_down = 0;
 	} else if (k->vkCode != global_keys_down &&
 	    ((GetAsyncKeyState(VK_LWIN) | GetAsyncKeyState(VK_RWIN)) & 0x8000)) {
-		key = win32_global_key(k->vkCode);
-		if (key != KEYC_NONE) {
+		gk.key = win32_global_key(k->vkCode);
+		if (gk.key != KEYC_NONE) {
 			global_keys_down = k->vkCode;
-			send(global_keys[1], (char *)&key, sizeof key, 0);
+			gk.foreground = 0;
+			if ((fg = GetForegroundWindow()) != NULL)
+				GetWindowThreadProcessId(fg, &gk.foreground);
+			send(global_keys[1], (char *)&gk, sizeof gk, 0);
 		}
 	}
 	return (CallNextHookEx(NULL, code, wp, lp));
@@ -205,11 +272,10 @@ static void
 win32_global_keys_read(evutil_socket_t fd, __unused short events,
     __unused void *arg)
 {
-	key_code	key;
+	struct win32_global_key	gk;
 
-	if (recv((SOCKET)fd, (char *)&key, sizeof key, MSG_WAITALL) ==
-	    sizeof key)
-		key_bindings_global(key);
+	if (recv((SOCKET)fd, (char *)&gk, sizeof gk, MSG_WAITALL) == sizeof gk)
+		key_bindings_global(gk.key, (pid_t)gk.foreground);
 }
 
 /*

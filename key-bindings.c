@@ -683,30 +683,10 @@ key_bindings_read_only(struct cmdq_item *item, __unused void *data)
 	return (CMD_RETURN_ERROR);
 }
 
-/*
- * Run a key from the global table, pressed anywhere on the desktop, for the
- * most recently active client. A server with no client ignores it.
- */
-void
-key_bindings_global(key_code key)
-{
-	struct key_table	*table;
-	struct key_binding	*bd;
-	struct client		*c;
-	struct key_event	 event = { .key = key };
-
-	if ((table = key_bindings_get_table("global", 0)) == NULL)
-		return;
-	if ((bd = key_bindings_get(table, key)) == NULL)
-		return;
-	if ((c = cmd_find_best_client(NULL)) == NULL)
-		return;
-	key_bindings_dispatch(bd, NULL, c, &event, NULL);
-}
-
-struct cmdq_item *
-key_bindings_dispatch(struct key_binding *bd, struct cmdq_item *item,
-    struct client *c, struct key_event *event, struct cmd_find_state *fs)
+static struct cmdq_item *
+key_bindings_dispatch_formats(struct key_binding *bd, struct cmdq_item *item,
+    struct client *c, struct key_event *event, struct cmd_find_state *fs,
+    struct format_tree *formats)
 {
 	struct cmdq_item	*new_item;
 	struct cmdq_state	*new_state;
@@ -722,6 +702,8 @@ key_bindings_dispatch(struct key_binding *bd, struct cmdq_item *item,
 		if (bd->flags & KEY_BINDING_REPEAT)
 			flags |= CMDQ_STATE_REPEAT;
 		new_state = cmdq_new_state(fs, event, flags);
+		if (formats != NULL)
+			cmdq_add_formats(new_state, formats);
 		new_item = cmdq_get_command(bd->cmdlist, new_state);
 		cmdq_free_state(new_state);
 	}
@@ -730,4 +712,49 @@ key_bindings_dispatch(struct key_binding *bd, struct cmdq_item *item,
 	else
 		new_item = cmdq_append(c, new_item);
 	return (new_item);
+}
+
+struct cmdq_item *
+key_bindings_dispatch(struct key_binding *bd, struct cmdq_item *item,
+    struct client *c, struct key_event *event, struct cmd_find_state *fs)
+{
+	return (key_bindings_dispatch_formats(bd, item, c, event, fs, NULL));
+}
+
+/*
+ * Run a key from the global table, pressed anywhere on the desktop, for the
+ * most recently active client. A server with no client ignores it.
+ *
+ * foreground is the process owning the window that was in the foreground when
+ * the key was pressed (0 for none), or -1 where the platform doesn't say. On
+ * Windows the binding gets global_key_terminal_foreground: 1 if the client
+ * runs under that process, so its terminal had the focus.
+ */
+void
+key_bindings_global(key_code key, pid_t foreground)
+{
+	struct key_table	*table;
+	struct key_binding	*bd;
+	struct client		*c;
+	struct key_event	 event = { .key = key };
+	struct format_tree	*ft = NULL;
+
+	if ((table = key_bindings_get_table("global", 0)) == NULL)
+		return;
+	if ((bd = key_bindings_get(table, key)) == NULL)
+		return;
+	if ((c = cmd_find_best_client(NULL)) == NULL)
+		return;
+#ifdef _WIN32
+	if (foreground != -1) {
+		ft = format_create(NULL, NULL, FORMAT_NONE, 0);
+		format_add(ft, "global_key_terminal_foreground", "%d",
+		    win32_pid_descends(c->pid, foreground));
+	}
+#else
+	(void)foreground;
+#endif
+	key_bindings_dispatch_formats(bd, NULL, c, &event, NULL, ft);
+	if (ft != NULL)
+		format_free(ft);
 }

@@ -194,7 +194,7 @@ desktop_keys_read(int fd, __unused short events, __unused void *arg)
 	key_code	key;
 
 	if (read(fd, &key, sizeof key) == sizeof key)
-		key_bindings_global(key);
+		key_bindings_global(key, -1);
 }
 
 /* Start the hotkey thread, once, when the global table first gets a key. */
