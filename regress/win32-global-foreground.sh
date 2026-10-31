@@ -37,7 +37,12 @@ if [ -n "$CI" ]; then
 	"$PS" -NoProfile -ExecutionPolicy Bypass \
 	    -File "$(cygpath -w "$(dirname "$0")/win32-foreground.ps1")" \
 	    -Tmux "$(cygpath -w "$TEST_TMUX")" -Socket $SOCKET -Session fg \
-	    2>&1 | tr -d '\r' >$OUT
+	    >$OUT.raw 2>&1 </dev/null &
+	P=$!
+	WAIT_TIMEOUT=90 wait_until eval '! kill -0 $P 2>/dev/null' ||
+	    { kill $P 2>/dev/null; fail "press script still running after 90s"; }
+	tr -d '\r' <$OUT.raw >$OUT
+	rm -f $OUT.raw
 	cat $OUT
 	grep -qx 'first=[01]' $OUT || fail "first press: $(cat $OUT)"
 	if grep -qx 'fg=yes' $OUT; then

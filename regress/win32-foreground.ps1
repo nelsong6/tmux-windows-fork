@@ -39,14 +39,15 @@ function T { & $Tmux "-L$Socket" @args 2>$null }
 
 function Press-And-Read {
     T set -gu '@fg' | Out-Null
-    [Fg]::Send(@(0x5B, 0xC0)) | Out-Null   # Win, `
-    for ($i = 0; $i -lt 100; $i++) {
+    $sent = [Fg]::Send(@(0x5B, 0xC0))   # Win, `
+    $clock = [System.Diagnostics.Stopwatch]::StartNew()
+    while ($clock.Elapsed.TotalSeconds -lt 10) {
         [System.Windows.Forms.Application]::DoEvents()
         $v = (T show -gv '@fg') -join ''
         if ($v -ne '') { return $v }
         Start-Sleep -Milliseconds 50
     }
-    return '(none)'
+    return "(none, sent=$sent)"
 }
 
 $form = New-Object System.Windows.Forms.Form
@@ -65,13 +66,17 @@ $psi.Arguments = "-L$Socket -C attach -t $Session"
 $psi.UseShellExecute = $false
 $psi.RedirectStandardInput = $true
 $psi.RedirectStandardOutput = $true
+$psi.RedirectStandardError = $true
 $client = [System.Diagnostics.Process]::Start($psi)
 $client.BeginOutputReadLine()
-for ($i = 0; $i -lt 100; $i++) {
+$client.BeginErrorReadLine()
+try {
+$clock = [System.Diagnostics.Stopwatch]::StartNew()
+while ($clock.Elapsed.TotalSeconds -lt 10) {
     if ((T list-clients -F '#{client_pid}') -contains "$($client.Id)") { break }
     Start-Sleep -Milliseconds 100
 }
-
+"client=" + $client.Id + " listed=" + ((T list-clients -F '#{client_pid}') -join ',')
 "fg=" + $(if ([Fg]::GetForegroundWindow() -eq $form.Handle) { 'yes' } else { 'no' })
 "first=" + (Press-And-Read)
 
@@ -81,6 +86,8 @@ Start-Sleep -Milliseconds 200
 "owner=" + [Fg]::Owner() + " self=" + $PID
 "second=" + (Press-And-Read)
 
-$client.StandardInput.Close()
-if (-not $client.WaitForExit(5000)) { $client.Kill() }
-$form.Close()
+} finally {
+    $client.StandardInput.Close()
+    if (-not $client.WaitForExit(5000)) { $client.Kill() }
+    $form.Close()
+}
