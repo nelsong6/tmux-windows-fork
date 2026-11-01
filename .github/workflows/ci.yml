@@ -82,6 +82,13 @@ jobs:
           taskkill //F //IM tmux.exe 2>/dev/null || true
           TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-keys.sh
 
+      - name: Run kitty key form tests
+        shell: bash
+        timeout-minutes: 5
+        run: |
+          taskkill //F //IM tmux.exe 2>/dev/null || true
+          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-csi-u.sh
+
       - name: Run has-session tests
         shell: bash
         run: |
