@@ -1,6 +1,7 @@
 /*
- * Writes the first sentence of each command's description in tmux.1 as a C
- * table for display-palette, run at build time:
+ * Writes the first sentence of each command's description in tmux.1, and the
+ * tags of the section it is in, as a C table for display-palette, run at build
+ * time:
  *
  *	palette-descriptions tmux.1 palette-descriptions.h
  *
@@ -8,6 +9,9 @@
  * next; its text runs until the next .It, .El, .Pp, .Bl or .Bd. mdoc macros are
  * reduced to their words: Nm is tmux, Fl x is -x, Xr name n is name, and the
  * other inline macros are dropped.
+ *
+ * A section's tags are the words of its .Sh title in lower case, without
+ * "and", plurals made singular: CLIENTS AND SESSIONS is "client session".
  */
 
 #include <ctype.h>
@@ -132,11 +136,37 @@ write_string(FILE *f, const char *s)
 	fputc('"', f);
 }
 
+/* The tags of a .Sh line's title. */
+static void
+section_tags(const char *line, char *tags, size_t size)
+{
+	char	 copy[MAX_TEXT], *word;
+	size_t	 len;
+
+	*tags = '\0';
+	snprintf(copy, sizeof copy, "%s", line + 3);
+	for (word = strtok(copy, " \t"); word != NULL;
+	    word = strtok(NULL, " \t")) {
+		for (len = 0; word[len] != '\0'; len++)
+			word[len] = tolower((unsigned char)word[len]);
+		if (strcmp(word, "and") == 0)
+			continue;
+		/* clients and panes are plural; status and miscellaneous aren't. */
+		if (len > 3 && word[len - 1] == 's' && word[len - 2] != 's' &&
+		    word[len - 2] != 'u')
+			word[len - 1] = '\0';
+		if (*tags != '\0')
+			strncat(tags, " ", size - strlen(tags) - 1);
+		strncat(tags, word, size - strlen(tags) - 1);
+	}
+}
+
 int
 main(int argc, char **argv)
 {
 	FILE	*in, *out;
 	char	 buf[MAX_TEXT], text[MAX_TEXT], name[256], *seen[MAX_LINES];
+	char	 section[MAX_TEXT] = "";
 	int	 i, j, k, xo, nseen = 0, dup;
 	size_t	 len;
 
@@ -162,9 +192,14 @@ main(int argc, char **argv)
 	fprintf(out, "/* Generated from tmux.1 by tools/palette-descriptions.c. */\n\n");
 	fprintf(out, "static const struct palette_description {\n");
 	fprintf(out, "\tconst char\t*name;\n\tconst char\t*text;\n");
+	fprintf(out, "\tconst char\t*tags;\n");
 	fprintf(out, "} palette_descriptions[] = {\n");
 
 	for (i = 0; i < nlines; i++) {
+		if (starts_macro(lines[i], "Sh")) {
+			section_tags(lines[i], section, sizeof section);
+			continue;
+		}
 		if (strcmp(lines[i], ".It Xo") == 0 && i + 1 < nlines &&
 		    sscanf(lines[i + 1], ".Ic %255s", name) == 1)
 			xo = 1;
@@ -198,10 +233,12 @@ main(int argc, char **argv)
 		write_string(out, name);
 		fputs(", ", out);
 		write_string(out, text);
+		fputs(", ", out);
+		write_string(out, section);
 		fputs(" },\n", out);
 	}
 
-	fprintf(out, "\t{ NULL, NULL }\n};\n");
+	fprintf(out, "\t{ NULL, NULL, NULL }\n};\n");
 	if (fclose(out) != 0) {
 		perror(argv[2]);
 		return (1);

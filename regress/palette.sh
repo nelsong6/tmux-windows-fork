@@ -83,13 +83,14 @@ fail_row() {
 	tr -d '\r' <"$OUT/rows" | grep -- "$2"
 	exit 1
 }
-row '^0	kill-pane	Destroy the given pane\.		[0-9]*$' ||
+row '^0	kill-pane	Destroy the given pane\.		[0-9]*	kill pane window$' ||
     fail_row "no kill-pane row" kill-pane
 row '^0	splitp	alias for split-window		' || fail_row "no alias row" splitp
 row '^0	Rename the window	command-prompt.*	new-name (now first)	' ||
     fail_row "no prompted binding row" Rename
 row '^0	M-w	' || fail_row "no root binding row" M-w
 row '^1	Split		' || fail_row "no menu item row" Split
+row '^1	Split			[0-9]*	$' || fail_row "a menu item has tags" Split
 row '^1	Never	' && fail_row "a hidden menu item was offered" Never
 row '^0	choose-tree	' || fail_row "no choose-tree row" choose-tree
 row '^2	1: second	1 panes	' || fail_row "no window under a session" second
@@ -97,7 +98,7 @@ row '^2	1: second	1 panes	' || fail_row "no window under a session" second
 # is expanded and its menu is a folder (building it once crashed the server).
 row '^0	go-to	alias for run-shell' || fail_row "no run-shell -C alias row" go-to
 row '^1	0		' || fail_row "no item in the run-shell -C menu" "^1	0"
-row "^0	go-nowhere	alias for run-shell.*		[0-9]*\$" ||
+row "^0	go-nowhere	alias for run-shell.*		[0-9]*	run shell miscellaneous\$" ||
     fail_row "no row for a run-shell -C menu with nothing in it" go-nowhere
 
 # A pick that asks for text runs its template with the text, quotes and
