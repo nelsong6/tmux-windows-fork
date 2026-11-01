@@ -99,7 +99,7 @@ row '^1	Split		' || fail_row "no menu item row" Split
 row '^1	Never	' && fail_row "a hidden menu item was offered" Never
 row '^0	choose-tree	' || fail_row "no choose-tree row" choose-tree
 row '^2	1: second	1 panes	' || fail_row "no window under a session" second
-# An alias that runs a menu through run-shell -C, as move-tab does: its format
+# An alias that runs a menu through run-shell -C, as send-to-session does: its format
 # is expanded and its menu is a folder (building it once crashed the server).
 row '^0	go-to	alias for run-shell' || fail_row "no run-shell -C alias row" go-to
 row '^1	0		' || fail_row "no item in the run-shell -C menu" "^1	0"
