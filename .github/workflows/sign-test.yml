@@ -1,0 +1,33 @@
+name: Sign test (throwaway, TMUX-30)
+on: pull_request
+permissions:
+  contents: read
+  actions: read
+jobs:
+  sign:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: tmux-windows
+          run-id: 41342762436
+          github-token: ${{ github.token }}
+          path: pkg
+      - name: Sign the flagged build's tmux.exe
+        shell: pwsh
+        env:
+          PFX: ${{ secrets.AT_TERMINAL_PFX }}
+          PFX_PASSWORD: ${{ secrets.AT_TERMINAL_PFX_PASSWORD }}
+        run: |
+          "unsigned sha256: " + (Get-FileHash pkg/tmux.exe).Hash
+          $signtool = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe' | Sort-Object FullName -Descending | Select-Object -First 1
+          [IO.File]::WriteAllBytes("$PWD\cert.pfx", [Convert]::FromBase64String($env:PFX))
+          try {
+            & $signtool.FullName sign /fd SHA256 /f cert.pfx /p $env:PFX_PASSWORD pkg/tmux.exe
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          } finally { Remove-Item cert.pfx }
+          "signed sha256: " + (Get-FileHash pkg/tmux.exe).Hash
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tmux-signed
+          path: pkg/tmux.exe
