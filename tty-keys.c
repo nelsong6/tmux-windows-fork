@@ -1044,8 +1044,8 @@ tty_keys_callback(__unused int fd, __unused short events, void *data)
 }
 
 /*
- * Handle extended key input. This has two forms: \033[27;m;k~ and \033[k;mu,
- * where k is key as a number and m is a modifier. Returns 0 for success, -1
+ * Handle extended key input. This has three forms: \033[27;m;k~, \033[k;mu and
+ * \033[ku, where k is key as a number and m is a modifier. Returns 0 for success, -1
  * for failure, 1 for partial;
  */
 static int
@@ -1097,8 +1097,18 @@ tty_keys_extended_key(struct tty *tty, const char *buf, size_t len,
 		if (sscanf(tmp, "27;%u;%u", &modifiers, &number) != 2)
 			return (-1);
 	} else {
-		if (sscanf(tmp ,"%u;%u", &number, &modifiers) != 2)
+		/* The kitty protocol leaves out the modifier when it is 1 (none). */
+		switch (sscanf(tmp, "%u;%u", &number, &modifiers)) {
+		case 1:
+			if (strchr(tmp, ';') != NULL)
+				return (-1);
+			modifiers = 1;
+			break;
+		case 2:
+			break;
+		default:
 			return (-1);
+		}
 	}
 	*size = end + 1;
 
