@@ -2,18 +2,14 @@
 
 ## MSYS2 / Git Bash Shell Quirks
 
-### taskkill syntax
-MSYS2 converts single-slash flags (`/F`) into file paths. Always use **double slashes**:
+### Ending test servers
+Never end tmux.exe by name (`taskkill //IM tmux.exe`, `Stop-Process -Name tmux`): on a desktop that also ends at-terminal's live server and every window open in it (HOMECFG-97). End only the tmux running from this checkout's `build` folder, before a test or before a rebuild (the linker fails with `LNK1104: cannot open file 'tmux.exe'` while it runs):
 ```bash
-taskkill //F //IM tmux.exe
+bash regress/win32-stop-build.sh
 ```
-Never use `taskkill /F /IM` — MSYS2 mangles `/F` into `F:/`.
 
-### Before rebuilding tmux.exe
-Always kill all tmux processes first, or the linker fails with `LNK1104: cannot open file 'tmux.exe'`:
-```bash
-taskkill //F //IM tmux.exe 2>/dev/null; sleep 2
-```
+### Single-slash flags
+MSYS2 converts single-slash flags (`/F`) passed to native commands into paths (`F:/`). Write them with **double slashes** (`//F`).
 
 ### MSYS2 path conversion
 MSYS2 converts Unix-style paths passed to native Windows executables. This affects:
@@ -28,7 +24,7 @@ Never use `TMP` as a shell variable name in test scripts — it shadows Windows 
 
 ```bash
 # Debug build (from Git Bash)
-taskkill //F //IM tmux.exe 2>/dev/null; sleep 2
+bash regress/win32-stop-build.sh
 powershell.exe -NoProfile -Command "& { cmd.exe /c '\"C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvarsall.bat\" x64 >nul 2>&1 && cmake --build C:\src\tmux\build --config Debug' }"
 
 # Run tests
