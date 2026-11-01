@@ -36,7 +36,10 @@
  * buffer chooser) is a folder of the choices.
  *
  * A row is depth, name, description, the hint of a row that asks for text
- * (empty for the rest) and id, separated by tabs.
+ * (empty for the rest), id and tags, separated by tabs. A top-level row's tags
+ * are the words of its commands' names and the manual sections they are in,
+ * space separated, for the picker's tag search; deeper rows (a menu's items,
+ * a chooser's choices) have none.
  */
 
 static enum cmd_retval	cmd_display_palette_exec(struct cmd *,
@@ -91,6 +94,7 @@ struct palette {
 	struct evbuffer		*rows;
 	struct palette_entry	*entries;
 	u_int			 count;
+	char			*tags;	/* the top-level row being added */
 
 	int			 out;
 };
@@ -120,7 +124,9 @@ palette_add(struct palette *p, u_int depth, const char *name, const char *desc,
 	palette_add_field(p, name);
 	palette_add_field(p, desc);
 	palette_add_field(p, hint);
-	evbuffer_add_printf(p->rows, "\t%u\n", p->count);
+	evbuffer_add_printf(p->rows, "\t%u", p->count);
+	palette_add_field(p, depth == 0 ? p->tags : NULL);
+	evbuffer_add(p->rows, "\n", 1);
 
 	p->entries = xreallocarray(p->entries, p->count + 1,
 	    sizeof *p->entries);
@@ -254,6 +260,65 @@ palette_description(const struct cmd_entry *entry)
 			return (pd->text);
 	}
 	return (entry->usage);
+}
+
+/* Add the words of s, split at any of seps, to a space-separated tag list. */
+static void
+palette_add_tags(char **tags, const char *s, const char *seps)
+{
+	const char	*cp;
+	size_t		 n, m, have;
+	int		 found;
+
+	while (*s != '\0') {
+		n = strcspn(s, seps);
+		found = (n == 0);
+		for (cp = *tags; !found && cp != NULL && *cp != '\0'; cp += m) {
+			m = strcspn(cp, " ");
+			found = (m == n && strncmp(cp, s, n) == 0);
+			if (cp[m] == ' ')
+				m++;
+		}
+		if (!found) {
+			have = (*tags != NULL) ? strlen(*tags) : 0;
+			*tags = xrealloc(*tags, have + n + 2);
+			if (have != 0)
+				(*tags)[have++] = ' ';
+			memcpy(*tags + have, s, n);
+			(*tags)[have + n] = '\0';
+		}
+		s += n;
+		if (*s != '\0')
+			s++;
+	}
+}
+
+/* A command's tags: the words of its name and its manual section's tags. */
+static void
+palette_entry_tags(char **tags, const struct cmd_entry *entry)
+{
+	const struct palette_description	*pd;
+
+	palette_add_tags(tags, entry->name, "-");
+	for (pd = palette_descriptions; pd->name != NULL; pd++) {
+		if (strcmp(pd->name, entry->name) == 0) {
+			palette_add_tags(tags, pd->tags, " ");
+			break;
+		}
+	}
+}
+
+/* Make the tags of the next top-level rows those of commands. */
+static void
+palette_set_tags(struct palette *p, struct cmd_list *cmdlist)
+{
+	struct cmd	*cmd;
+
+	free(p->tags);
+	p->tags = NULL;
+	for (cmd = cmd_list_first(cmdlist); cmd != NULL;
+	    cmd = cmd_list_next(cmd))
+		palette_entry_tags(&p->tags, cmd_get_entry(cmd));
 }
 
 /* A format expanded as display-menu expands its items. */
@@ -584,6 +649,9 @@ palette_add_commands(struct palette *p)
 
 	for (loop = cmd_table; *loop != NULL; loop++) {
 		name = (*loop)->name;
+		free(p->tags);
+		p->tags = NULL;
+		palette_entry_tags(&p->tags, *loop);
 		required = palette_required((*loop)->usage);
 		if (required == NULL) {
 			palette_node_text(p, name, palette_description(*loop),
@@ -617,6 +685,7 @@ palette_add_aliases(struct palette *p)
 	struct options_entry		*o;
 	struct options_array_item	*a;
 	const char			**list = NULL;
+	struct cmd_list			*cmdlist;
 	char				*name, *target, *desc;
 	u_int				 n = 0, i;
 
@@ -637,6 +706,12 @@ palette_add_aliases(struct palette *p)
 			continue;
 		}
 		*target++ = '\0';
+		free(p->tags);
+		p->tags = NULL;
+		if ((cmdlist = palette_parse(target)) != NULL) {
+			palette_set_tags(p, cmdlist);
+			cmd_list_free(cmdlist);
+		}
 		xasprintf(&desc, "alias for %s", target);
 		palette_node_text(p, name, desc, target, name);
 		free(desc);
@@ -666,6 +741,7 @@ palette_add_bindings(struct palette *p)
 			continue;
 		bd = key_bindings_first(table);
 		for (; bd != NULL; bd = key_bindings_next(table, bd)) {
+			palette_set_tags(p, bd->cmdlist);
 			command = cmd_list_print(bd->cmdlist, 0);
 			if (i == 1) {
 				name = xstrdup(key_string_lookup_key(bd->key,
@@ -715,6 +791,7 @@ palette_free(struct palette *p)
 		free(p->entries[i].template);
 	}
 	free(p->entries);
+	free(p->tags);
 	evbuffer_free(p->rows);
 	if (p->out != -1)
 		close(p->out);

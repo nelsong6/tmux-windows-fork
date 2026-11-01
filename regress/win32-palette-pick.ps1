@@ -21,7 +21,7 @@ foreach ($line in [IO.File]::ReadAllLines("$Dir/pick", $utf8)) {
 
 $parent = $null
 foreach ($row in $rows -split "`n") {
-    $depth, $name, $desc, $hint, $id = $row -split "`t"
+    $depth, $name, $desc, $hint, $id, $tags = $row -split "`t"
     if ($depth -eq '0') { $parent = $name }
     if ($name -ne $spec.pick) { continue }
     if ($spec.under -and ($depth -eq '0' -or $parent -ne $spec.under)) { continue }
