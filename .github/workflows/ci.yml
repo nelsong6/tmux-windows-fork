@@ -95,6 +95,11 @@ jobs:
         run: |
           TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-file.sh
 
+      - name: Run strftime tests
+        shell: bash
+        run: |
+          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-strftime.sh
+
       - name: Run layout tests
         shell: bash
         run: |
