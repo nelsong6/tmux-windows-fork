@@ -2252,6 +2252,7 @@ server_upgrade_restore(void)
 			tty_send_requests(&c->tty);
 	}
 	server_upgrading = 0;
+	session_set_changed();
 	RB_FOREACH(w, windows, &windows)
 		window_update_focus(w);
 	log_debug("upgrade: took over from the old server");

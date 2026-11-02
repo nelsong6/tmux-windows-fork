@@ -183,6 +183,7 @@ notify_add(const char *name, struct cmd_find_state *fs, struct client *c,
 	struct notify_entry	*ne;
 	struct cmdq_item	*item;
 
+	session_set_changed();
 	item = cmdq_running(NULL);
 	if (item != NULL && (cmdq_get_flags(item) & CMDQ_STATE_NOHOOKS))
 		return;

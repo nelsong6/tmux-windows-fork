@@ -651,6 +651,7 @@ cmdq_fire_command(struct cmdq_item *item)
 		goto out;
 
 	retval = entry->exec(cmd, item);
+	session_set_changed();
 	if (retval == CMD_RETURN_ERROR)
 		goto out;
 

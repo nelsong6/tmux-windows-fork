@@ -471,6 +471,7 @@ server_send_exit(void)
 	struct client	*c, *c1;
 	struct session	*s, *s1;
 
+	session_set_stop();
 	cmd_wait_for_flush();
 
 	TAILQ_FOREACH_SAFE(c, &clients, entry, c1) {
