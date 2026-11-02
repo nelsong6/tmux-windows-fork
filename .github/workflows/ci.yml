@@ -53,109 +53,100 @@ jobs:
         run: |
           cmake --build build --config Release
 
+      - name: Run leak probe (temporary)
+        shell: bash
+        continue-on-error: true
+        run: |
+          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-leak-probe.sh
+
       - name: Run basic regression tests
         shell: bash
         run: |
-          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-basic.sh
+          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-basic.sh
 
       - name: Run Claude swarm simulation tests
         shell: bash
         run: |
-          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-claude-swarm.sh
+          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-claude-swarm.sh
 
       - name: Run format string tests
         shell: bash
         run: |
-          bash regress/win32-stop-build.sh
-          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-format-strings.sh
+          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-format-strings.sh
 
       - name: Run config syntax tests
         shell: bash
         run: |
-          bash regress/win32-stop-build.sh
-          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-conf-syntax.sh
+          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-conf-syntax.sh
 
       - name: Run key handling tests
         shell: bash
         timeout-minutes: 5
         run: |
-          bash regress/win32-stop-build.sh
-          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-keys.sh
+          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-keys.sh
 
       - name: Run kitty key form tests
         shell: bash
         timeout-minutes: 5
         run: |
-          bash regress/win32-stop-build.sh
-          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-csi-u.sh
+          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-csi-u.sh
 
       - name: Run has-session tests
         shell: bash
         run: |
-          bash regress/win32-stop-build.sh
-          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-has-session.sh
+          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-has-session.sh
 
       - name: Run file tests
         shell: bash
         run: |
-          bash regress/win32-stop-build.sh
-          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-file.sh
+          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-file.sh
 
       - name: Run layout tests
         shell: bash
         run: |
-          bash regress/win32-stop-build.sh
-          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-layout.sh
+          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-layout.sh
 
       - name: Run control client tests
         shell: bash
         run: |
-          bash regress/win32-stop-build.sh
-          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-control-client.sh
+          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-control-client.sh
 
       - name: Run attach size tests
         shell: bash
         run: |
-          bash regress/win32-stop-build.sh
-          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-attach-size.sh
+          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-attach-size.sh
 
       - name: Run wrap tests
         shell: bash
         run: |
-          bash regress/win32-stop-build.sh
-          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-wrap.sh
+          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-wrap.sh
 
       - name: Run line size tests
         shell: bash
         run: |
-          bash regress/win32-stop-build.sh
-          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-linesize.sh
+          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-linesize.sh
 
       - name: Run palette tests
         shell: bash
         run: |
-          bash regress/win32-stop-build.sh
-          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-palette.sh
+          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-palette.sh
 
       - name: Run keep-alive tests
         shell: bash
         run: |
-          bash regress/win32-stop-build.sh
-          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-keep-alive.sh
+          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-keep-alive.sh
 
       - name: Run new-window -W tests
         shell: bash
         timeout-minutes: 5
         run: |
-          bash regress/win32-stop-build.sh
-          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-new-window-draw.sh
+          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-new-window-draw.sh
 
       - name: Run global key foreground tests
         shell: bash
         timeout-minutes: 5
         run: |
-          bash regress/win32-stop-build.sh
-          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-global-foreground.sh
+          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-global-foreground.sh
 
       - name: Fetch ConPTY
         shell: pwsh
@@ -168,10 +159,9 @@ jobs:
       - name: Run upgrade tests
         shell: bash
         run: |
-          bash regress/win32-stop-build.sh
           mkdir -p build/upgrade
           cp build/Debug/tmux.exe conpty/runtimes/win-x64/native/conpty.dll conpty/build/native/runtimes/x64/OpenConsole.exe build/upgrade/
-          TEST_TMUX=./build/upgrade/tmux.exe bash regress/win32-upgrade.sh
+          TEST_TMUX=./build/upgrade/tmux.exe bash regress/win32-run.sh win32-upgrade.sh
 
       - name: Upload build artifacts
         if: success()

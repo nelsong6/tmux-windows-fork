@@ -140,6 +140,7 @@ echo "PASS 10: switch-client -H -R"
 # of its own; on a developer's PC it would land on theirs. ---
 : >$CTL
 IDLE="$TEST_TMUX -Lctrltest-idle"
+trap "rm -f $OUT $CTL; $TMUX kill-server 2>/dev/null; $IDLE kill-server 2>/dev/null" 0 1 15
 $IDLE $FNULL new -d -sidle < /dev/null || fail "global: idle server"
 $IDLE bind -T global 'W-`' set -g @global pressed
 $TMUX bind -T global 'W-`' set -g @global pressed
