@@ -30,6 +30,7 @@ set -g @go-menu 'display-menu -T go "#{session_name}" g "select-window -t first"
 set -s command-alias[100] 'go-to=run-shell -C "#{E:@go-menu}"'
 set -g @no-menu 'display-menu -T none #{?#{==:1,0},"Never" n "kill-server",}'
 set -s command-alias[101] 'go-nowhere=run-shell -C "#{E:@no-menu}"'
+set -s command-alias[102] 'clock-mode=display-message clock'
 EOF
 $TMUX -f "$(cygpath -m "$OUT/test.conf")" new -d -x100 -y30 -n first \
     </dev/null || exit 1
@@ -106,6 +107,11 @@ row '^0	go-to	alias for run-shell' || fail_row "no run-shell -C alias row" go-to
 row '^1	0		' || fail_row "no item in the run-shell -C menu" "^1	0"
 row "^0	go-nowhere	alias for run-shell.*		[0-9]*	run shell miscellaneous\$" ||
     fail_row "no row for a run-shell -C menu with nothing in it" go-nowhere
+# An alias that takes a command's name replaces that command's row, as typing
+# the name runs the alias.
+[ "$(tr -d '\r' <"$OUT/rows" | grep -c '^0	clock-mode	')" = 1 ] &&
+    row '^0	clock-mode	alias for display-message clock	' ||
+    fail_row "clock-mode is not one alias row" clock-mode
 
 # A pick that asks for text runs its template with the text, quotes and
 # non-ASCII intact.

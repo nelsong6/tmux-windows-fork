@@ -28,7 +28,7 @@
 	" 'Next' 'n' {switch-client -n}" \
 	" 'Previous' 'p' {switch-client -p}" \
 	" ''" \
-	" 'Renumber' 'N' {move-window -r}" \
+	" 'Renumber' 'N' {movew -r}" \
 	" 'Rename' 'n' {command-prompt -I \"#S\" {rename-session -- '%%'}}" \
 	" ''" \
 	" 'New Session' 's' {new-session}" \
@@ -372,7 +372,7 @@ key_bindings_init(void)
 		"bind -N 'Switch to next client' ) { switch-client -n }",
 		"bind -N 'Rename current window' , { command-prompt -I'#W' { rename-window -- '%%' } }",
 		"bind -N 'Delete the most recent paste buffer' - { delete-buffer }",
-		"bind -N 'Move the current window' . { command-prompt -T target { move-window -t '%%' } }",
+		"bind -N 'Move the current window' . { command-prompt -T target { movew -t '%%' } }",
 		"bind -N 'Describe key binding' '/' { command-prompt -kpkey  { list-keys -1N '%%' } }",
 		"bind -N 'Select window 0' 0 { select-window -t:=0 }",
 		"bind -N 'Select window 1' 1 { select-window -t:=1 }",

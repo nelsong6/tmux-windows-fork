@@ -646,9 +646,15 @@ palette_add_commands(struct palette *p)
 	struct palette_entry	*pe;
 	char			*required;
 	const char		*name;
+	char			*alias;
 
 	for (loop = cmd_table; *loop != NULL; loop++) {
 		name = (*loop)->name;
+		/* An alias of the same name is what typing it runs. */
+		if ((alias = cmd_get_alias(name)) != NULL) {
+			free(alias);
+			continue;
+		}
 		free(p->tags);
 		p->tags = NULL;
 		palette_entry_tags(&p->tags, *loop);
