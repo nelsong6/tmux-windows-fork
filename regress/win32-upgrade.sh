@@ -76,6 +76,10 @@ $TMUX send-keys -tup:0.0 "echo BEFORE_MARK" Enter
 wait_for up:0.0 "^BEFORE_MARK"
 $TMUX set -g @upgrade-test kept
 $TMUX bind -T root F12 display -p f12-bound
+# A binding made before an alias took its command's name (clock-mode has no
+# short name to print it by) is carried as the command, not the alias.
+$TMUX bind -T root F11 clock-mode -t up:0.0
+$TMUX set -s command-alias[100] 'clock-mode=run-shell -C "display -p alias"'
 $TMUX set-buffer -b upbuf "buffer kept"
 # As a server upgraded by an affected build carries it in its state.
 $TMUX setenv -g TMUX_UPGRADE 1,2
@@ -114,6 +118,8 @@ pane_has up:0.0 "^BEFORE_MARK" || fail "pane screen lost"
 [ "$($TMUX show -gv @upgrade-test | tr -d '\r')" = kept ] || fail "option lost"
 [ "$($TMUX show-buffer -b upbuf | tr -d '\r')" = "buffer kept" ] || fail "buffer lost"
 $TMUX list-keys -T root F12 | grep -q f12-bound || fail "key binding lost"
+$TMUX list-keys -T root F11 | grep -q "clock-mode -t up:0.0" ||
+    fail "a binding an alias shadows was lost"
 [ "$($TMUX list-windows -tup | wc -l)" -eq 2 ] || fail "window lost"
 [ "$($TMUX display -tup:1 -p '#{window_name}' | tr -d '\r')" = second ] ||
 	fail "window name lost"
