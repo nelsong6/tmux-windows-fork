@@ -111,11 +111,11 @@ wait_gone
 $TMUX $FNULL new -d -sa -nmoved < /dev/null || exit 1
 $TMUX new-window -d -ta -nstays || exit 1
 $TMUX new -d -sb < /dev/null || exit 1
+$TMUX bind -T test x move-window -s a:moved -t b: || exit 1
 $TMUX set -s command-alias[100] 'move-window=display-message alias' || exit 1
-$TMUX bind -T test x { move-window -s a:moved -t b: } || exit 1
 LINE=$($TMUX list-keys -T test x | tr -d '\r')
 case "$LINE" in
-*"{ movew -s a:moved -t b: }"*) ;;
+*" x "*"movew -s a:moved -t b:") ;;
 *) echo "binding printed as: $LINE"; exit 1 ;;
 esac
 $TMUX movew -s a:moved -t b: || exit 1
