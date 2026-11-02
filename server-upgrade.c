@@ -382,6 +382,7 @@ upgrade_restore_keys(struct upgrade_reader *r)
 	struct key_table	*table;
 	struct key_binding	*bd;
 	struct cmd_parse_result	*pr;
+	struct cmd_parse_input	 pi;
 	key_code		*keys = NULL, key;
 	char			*name, *note, *cmd;
 	u_int			 ntables, n, i, j, k, flags;
@@ -410,7 +411,14 @@ upgrade_restore_keys(struct upgrade_reader *r)
 			flags = upr_u32(&o);
 			cmd = upr_str(&o);
 			if (name != NULL && cmd != NULL) {
-				pr = cmd_parse_from_string(cmd, NULL);
+				/*
+				 * A saved binding is commands the old server
+				 * had already resolved: an alias that has since
+				 * taken one of their names is not what it ran.
+				 */
+				memset(&pi, 0, sizeof pi);
+				pi.flags = CMD_PARSE_NOALIAS;
+				pr = cmd_parse_from_string(cmd, &pi);
 				if (pr->status == CMD_PARSE_SUCCESS) {
 					key_bindings_add(name, key, note,
 					    flags & KEY_BINDING_REPEAT,
