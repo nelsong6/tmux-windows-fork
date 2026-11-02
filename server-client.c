@@ -544,6 +544,8 @@ server_client_set_session(struct client *c, struct session *s)
 		status_timer_start(c);
 		notify_client("client-session-changed", c);
 		server_redraw_client(c);
+		if (old == NULL)
+			session_set_offer_soon();
 	}
 
 	server_check_unattached();
@@ -3576,8 +3578,10 @@ server_client_dispatch(struct imsg *imsg, void *arg)
 		else
 			c->overlay_resize(c, c->overlay_data);
 		server_redraw_client(c);
-		if (c->session != NULL)
+		if (c->session != NULL) {
 			notify_client("client-resized", c);
+			session_set_offer_soon();
+		}
 		break;
 	case MSG_EXITING:
 		if (datalen != 0)
@@ -3605,8 +3609,10 @@ server_client_dispatch(struct imsg *imsg, void *arg)
 		else
 			c->overlay_resize(c, c->overlay_data);
 		server_redraw_client(c);
-		if (c->session != NULL)
+		if (c->session != NULL) {
 			notify_client("client-resized", c);
+			session_set_offer_soon();
+		}
 		break;
 #endif
 	case MSG_WAKEUP:

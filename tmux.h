@@ -3632,6 +3632,8 @@ void	 session_set_stop(void);
 void	 session_set_closed(void);
 void	 session_set_window_destroyed(struct window *);
 char	*session_set_reopen(int, char **);
+char	*session_set_restore(const char **, u_int, struct client *, char **);
+void	 session_set_offer_soon(void);
 
 /* session.c */
 extern struct sessions sessions;
