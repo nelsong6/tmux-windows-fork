@@ -33,7 +33,7 @@ TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-basic.sh
 
 ## Test Suite
 
-CI runs 19 test scripts from `regress/`, each through `win32-run.sh`:
+CI runs 20 test scripts from `regress/`, each through `win32-run.sh`:
 - `win32-basic.sh` — core session/window/pane operations
 - `win32-claude-swarm.sh` — multi-session concurrent usage
 - `win32-format-strings.sh` — `#{...}` format engine (171 assertions)
