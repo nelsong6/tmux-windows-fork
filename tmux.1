@@ -905,7 +905,13 @@ or
 .Ql \[ti] )
 to specify the marked pane (see
 .Ic select-pane
-.Fl m ) .
+.Fl m ) ,
+or
+.Ql {caller}
+to specify the pane the command was run from, named by its
+.Ev TMUX_PANE ,
+whichever window is current; a hook run in a background window can name its
+own pane this way without a shell to expand the variable.
 .Pp
 Sessions, window and panes are each numbered with a unique ID; session IDs are
 prefixed with a
@@ -7117,6 +7123,12 @@ changes the confirmation key to
 .Ar confirm-key ;
 the default is
 .Ql y .
+.It Ic play-sound Ar path
+Play the sound file
+.Ar path
+from the server, without waiting for it to finish; a sound already playing is
+stopped.
+Only Windows is supported.
 .It Xo Ic display-palette
 .Op Fl c Ar target-client
 .Op Fl h Ar height

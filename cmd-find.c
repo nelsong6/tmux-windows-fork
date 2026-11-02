@@ -930,6 +930,7 @@ cmd_find_target(struct cmd_find_state *fs, struct cmdq_item *item,
 	struct mouse_event	*m;
 	struct client		*c;
 	struct cmd_find_state	 current;
+	struct window_pane	*wp;
 	char			*colon, *period, *copy = NULL, tmp[256];
 	const char		*session, *window, *pane, *s;
 	int			 window_only = 0, pane_only = 0;
@@ -1006,6 +1007,17 @@ cmd_find_target(struct cmd_find_state *fs, struct cmdq_item *item,
 		fs->wl = c->session->curw;
 		fs->wp = c->session->curw->window->active;
 		fs->w = c->session->curw->window;
+		goto found;
+	}
+
+	/* {caller} is the pane the command was run from (its TMUX_PANE). */
+	if (strcmp(target, "{caller}") == 0) {
+		wp = cmd_find_inside_pane(cmdq_get_client(item));
+		if (wp == NULL || cmd_find_from_pane(fs, wp, flags) != 0) {
+			if (~flags & CMD_FIND_QUIET)
+				cmdq_error(item, "no caller pane");
+			goto error;
+		}
 		goto found;
 	}
 

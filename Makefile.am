@@ -98,6 +98,7 @@ dist_tmux_SOURCES = \
 	cmd-display-menu.c \
 	cmd-display-message.c \
 	cmd-display-palette.c \
+	cmd-play-sound.c \
 	cmd-display-panes.c \
 	cmd-find-window.c \
 	cmd-find.c \

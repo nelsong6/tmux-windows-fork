@@ -69,6 +69,7 @@ set(TMUX_SOURCES
     cmd-display-menu.c
     cmd-display-message.c
     cmd-display-palette.c
+    cmd-play-sound.c
     cmd-display-panes.c
     cmd-find.c
     cmd-find-window.c
@@ -304,6 +305,7 @@ target_link_libraries(tmux PRIVATE
     shell32
     ole32
     ntdll
+    winmm
 )
 
 # utf8proc
