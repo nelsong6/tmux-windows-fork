@@ -455,6 +455,33 @@ format_job_tidy(struct format_job_tree *jobs, int force)
 	}
 }
 
+#ifdef _WIN32
+/*
+ * The conversions the C runtime's strftime accepts, each after %, an optional
+ * # and an optional E or O. Any other ends the process.
+ */
+#define FORMAT_STRFTIME_CONVERSIONS "%ABCDFGHIMRSTUVWXYZabcdeghjmnprtuwxyz"
+
+/* Report a format with an unknown conversion once, so its source is found. */
+static void
+format_strftime_report(const char *fmt)
+{
+	static char	*reported[64];
+	static u_int	 nreported;
+	u_int		 i;
+
+	for (i = 0; i < nreported; i++) {
+		if (strcmp(reported[i], fmt) == 0)
+			return;
+	}
+	if (nreported == nitems(reported))
+		return;
+	reported[nreported++] = xstrdup(fmt);
+	server_add_message("time format has a %% sequence strftime can't "
+	    "expand, left as text: %s", fmt);
+}
+#endif
+
 /* Work around needless -Wformat-nonliteral gcc warning. */
 #ifdef __GNUC__
 #pragma GCC diagnostic push
@@ -463,7 +490,46 @@ format_job_tidy(struct format_job_tree *jobs, int force)
 static size_t
 format_strftime(char *s, size_t max, const char *fmt, const struct tm *tm)
 {
+#ifdef _WIN32
+	const char	*cp, *end;
+	char		*safe, *out;
+	size_t		 n;
+	int		 escaped = 0;
+
+	/*
+	 * Double the % of a sequence the C runtime doesn't know, so it is
+	 * printed as written, as glibc does.
+	 */
+	safe = out = xmalloc(2 * strlen(fmt) + 1);
+	for (cp = fmt; *cp != '\0'; cp++) {
+		*out++ = *cp;
+		if (*cp != '%')
+			continue;
+		end = cp + 1;
+		if (*end == '#')
+			end++;
+		if (*end == 'E' || *end == 'O')
+			end++;
+		if (*end != '\0' &&
+		    strchr(FORMAT_STRFTIME_CONVERSIONS, *end) != NULL) {
+			memcpy(out, cp + 1, end - cp);
+			out += end - cp;
+			cp = end;
+		} else {
+			*out++ = '%';
+			escaped = 1;
+		}
+	}
+	*out = '\0';
+
+	n = strftime(s, max, safe, tm);
+	free(safe);
+	if (escaped)
+		format_strftime_report(fmt);
+	return (n);
+#else
 	return (strftime(s, max, fmt, tm));
+#endif
 }
 #ifdef __GNUC__
 #pragma GCC diagnostic pop
