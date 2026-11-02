@@ -581,17 +581,33 @@ cmd_copy(struct cmd *cmd, int argc, char **argv)
 	return (new_cmd);
 }
 
+/*
+ * The name a command is printed by: its short name when an alias takes its
+ * name, so the string parses back to this command, not the alias.
+ */
+static const char *
+cmd_print_name(const struct cmd_entry *entry)
+{
+	char	*alias;
+
+	if (entry->alias == NULL || (alias = cmd_get_alias(entry->name)) == NULL)
+		return (entry->name);
+	free(alias);
+	return (entry->alias);
+}
+
 /* Get a command as a string. */
 char *
 cmd_print(struct cmd *cmd)
 {
-	char	*out, *s;
+	const char	*name = cmd_print_name(cmd->entry);
+	char		*out, *s;
 
 	s = args_print(cmd->args);
 	if (*s != '\0')
-		xasprintf(&out, "%s %s", cmd->entry->name, s);
+		xasprintf(&out, "%s %s", name, s);
 	else
-		out = xstrdup(cmd->entry->name);
+		out = xstrdup(name);
 	free(s);
 
 	return (out);
