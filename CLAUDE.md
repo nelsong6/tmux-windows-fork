@@ -3,7 +3,7 @@
 ## MSYS2 / Git Bash Shell Quirks
 
 ### Ending test servers
-Never end tmux.exe by name (`taskkill //IM tmux.exe`, `Stop-Process -Name tmux`): on a desktop that also ends at-terminal's live server and every window open in it (HOMECFG-97). End only the tmux running from this checkout's `build` folder, before a test or before a rebuild (the linker fails with `LNK1104: cannot open file 'tmux.exe'` while it runs):
+Never end tmux.exe by name (`taskkill //IM tmux.exe`, `Stop-Process -Name tmux`): on a desktop that also ends at-terminal's live server and every window open in it (HOMECFG-97). End only the tmux running from this checkout's `build` folder, before a rebuild (the linker fails with `LNK1104: cannot open file 'tmux.exe'` while it runs):
 ```bash
 bash regress/win32-stop-build.sh
 ```
@@ -28,17 +28,18 @@ bash regress/win32-stop-build.sh
 powershell.exe -NoProfile -Command "& { cmd.exe /c '\"C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvarsall.bat\" x64 >nul 2>&1 && cmake --build C:\src\tmux\build --config Debug' }"
 
 # Run tests
-TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-basic.sh
+TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-basic.sh
 ```
 
 ## Test Suite
 
-CI runs 17 test scripts from `regress/`:
+CI runs 18 test scripts from `regress/`, each through `win32-run.sh`:
 - `win32-basic.sh` — core session/window/pane operations
 - `win32-claude-swarm.sh` — multi-session concurrent usage
 - `win32-format-strings.sh` — `#{...}` format engine (171 assertions)
 - `win32-conf-syntax.sh` — config file parsing (21 files)
 - `win32-keys.sh` — key handling (13 tests, tests effects not raw codes)
+- `win32-csi-u.sh` — a key in the kitty keyboard protocol's short form (`ESC [ 27 u`) is read as that key, not as `M-[` and typed text (client in a pane of a second server)
 - `win32-has-session.sh` — exit code validation
 - `win32-file.sh` — `source-file`, `load-buffer` and `save-buffer` from a second client finish, keep the bytes, and fail with exit 1
 - `win32-layout.sh` — pane dimension verification (7 tests)
@@ -55,6 +56,8 @@ CI runs 17 test scripts from `regress/`:
 CI's `macos` job builds with tmux's own Unix build (`sh autogen.sh && ./configure --enable-utf8proc && make`, Homebrew's autoconf, automake, pkgconf, libevent and utf8proc) for the work Mac, and runs `regress/palette.sh` (the palette tests, client attached from a pane of a second server, `palette-pick.sh` for fzt) and `regress/hold.sh` (`switch-client -H`/`-R`). The macOS keyboard (held modifiers, the global table as registered hotkeys) is `osdep-darwin-keys.c`; the build is the `tmux-macos` artifact.
 
 CI's `linux` job does the same on Ubuntu (apt's autoconf, automake, pkg-config, bison, libevent, ncurses and utf8proc) for Nelson's Linux machine, with the same two tests and `regress/upgrade.sh` (`upgrade-server` on Linux: the new build is started from the old server and inherits every pty and socket at the same descriptor number, so nothing restarts). `adopt-pane` takes a pane's pty from another server (`pidfd_getfd`), for moving a server that has no `upgrade-server` onto the fork (profile 2's `bin/tmux-move-server`). The Linux keyboard is `osdep-linux-keys.c`: it reads the keyboards' evdev devices, so it needs the user in the `input` group and works under X11 and Wayland alike; the build is the `tmux-linux` artifact.
+
+`win32-run.sh TEST` fails a test that leaves anything running from the `build` folder 10 s after it ends, naming each process (an error annotation in CI), then ends those; it refuses to start a test while one is already running and ends nothing then (TMUX-35). A test kills every server it starts in its exit trap.
 
 They wait with `regress/win32-wait.sh` (poll until a condition holds, fail after 10 s), not fixed sleeps. Match a command's output with `^`: the typed command line holds the same text.
 
