@@ -53,6 +53,12 @@ jobs:
         run: |
           cmake --build build --config Release
 
+      - name: Run leak probe (temporary)
+        shell: bash
+        continue-on-error: true
+        run: |
+          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-leak-probe.sh
+
       - name: Run basic regression tests
         shell: bash
         run: |
