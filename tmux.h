@@ -1238,6 +1238,7 @@ struct window_pane {
 	char	       **argv;
 	char		*shell;
 	char		*cwd;
+	char		*session_set_command; /* session-set.c */
 
 	pid_t		 pid;
 	char		 tty[TTY_NAME_MAX];
@@ -1333,6 +1334,7 @@ struct window {
 	u_int			 new_xpixel;
 	u_int			 new_ypixel;
 
+	char			*session_set_line; /* session-set.c */
 	struct utf8_data	*fill_character;
 	int			 flags;
 #define WINDOW_BELL 0x1
@@ -3623,6 +3625,14 @@ void	control_notify_session_window_changed(struct session *);
 void	control_notify_paste_buffer_changed(const char *);
 void	control_notify_paste_buffer_deleted(const char *);
 
+/* session-set.c */
+void	 session_set_changed(void);
+void	 session_set_output(void);
+void	 session_set_stop(void);
+void	 session_set_closed(void);
+void	 session_set_window_destroyed(struct window *);
+char	*session_set_reopen(int, char **);
+
 /* session.c */
 extern struct sessions sessions;
 extern struct session_groups session_groups;
@@ -3698,6 +3708,7 @@ char		*osdep_get_cwd(int);
 struct event_base *osdep_event_init(void);
 #ifdef _WIN32
 char		*win32_pane_command(pid_t);
+void		 win32_pane_commands(pid_t *, u_int, char **);
 int		 win32_pid_descends(pid_t, pid_t);
 #endif
 

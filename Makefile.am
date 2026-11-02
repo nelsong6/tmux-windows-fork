@@ -125,6 +125,7 @@ dist_tmux_SOURCES = \
 	cmd-refresh-client.c \
 	cmd-rename-session.c \
 	cmd-rename-window.c \
+	cmd-reopen-window.c \
 	cmd-resize-pane.c \
 	cmd-resize-window.c \
 	cmd-respawn-pane.c \
@@ -193,6 +194,7 @@ dist_tmux_SOURCES = \
 	server-fn.c \
 	server-upgrade.c \
 	server.c \
+	session-set.c \
 	session.c \
 	sort.c \
 	spawn.c \

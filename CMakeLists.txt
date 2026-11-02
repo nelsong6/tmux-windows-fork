@@ -96,6 +96,7 @@ set(TMUX_SOURCES
     cmd-refresh-client.c
     cmd-rename-session.c
     cmd-rename-window.c
+    cmd-reopen-window.c
     cmd-resize-pane.c
     cmd-resize-window.c
     cmd-respawn-pane.c
@@ -162,6 +163,7 @@ set(TMUX_SOURCES
     server-client.c
     server-fn.c
     server-upgrade.c
+    session-set.c
     session.c
     sort.c
     spawn.c

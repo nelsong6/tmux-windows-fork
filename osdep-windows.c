@@ -97,6 +97,76 @@ win32_pane_command(pid_t pid)
 }
 
 /*
+ * win32_pane_command for many panes from one look at the process table, so a
+ * session-set snapshot costs one snapshot however many panes there are.
+ * names[i] is NULL where pids[i] has no name.
+ */
+void
+win32_pane_commands(pid_t *pids, u_int n, char **names)
+{
+	HANDLE		 snap;
+	PROCESSENTRY32W	 pe;
+	ULONGLONG	*shell_start, *best_start, start;
+	WCHAR		(*shell_name)[MAX_PATH], (*best)[MAX_PATH];
+	char		 name[MAX_PATH * 3], *dot;
+	u_int		 i;
+
+	for (i = 0; i < n; i++)
+		names[i] = NULL;
+	if (n == 0)
+		return;
+	snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+	if (snap == INVALID_HANDLE_VALUE)
+		return;
+
+	shell_start = xcalloc(n, sizeof *shell_start);
+	best_start = xcalloc(n, sizeof *best_start);
+	shell_name = xcalloc(n, sizeof *shell_name);
+	best = xcalloc(n, sizeof *best);
+	for (i = 0; i < n; i++)
+		shell_start[i] = win32_process_start((DWORD)pids[i]);
+
+	pe.dwSize = sizeof pe;
+	for (BOOL ok = Process32FirstW(snap, &pe); ok;
+	    ok = Process32NextW(snap, &pe)) {
+		for (i = 0; i < n; i++) {
+			if (pids[i] <= 0)
+				continue;
+			if (pe.th32ProcessID == (DWORD)pids[i]) {
+				wcscpy_s(shell_name[i], MAX_PATH, pe.szExeFile);
+				continue;
+			}
+			if (pe.th32ParentProcessID != (DWORD)pids[i] ||
+			    _wcsicmp(pe.szExeFile, L"conhost.exe") == 0)
+				continue;
+			start = win32_process_start(pe.th32ProcessID);
+			if (start < shell_start[i] || start <= best_start[i])
+				continue;
+			best_start[i] = start;
+			wcscpy_s(best[i], MAX_PATH, pe.szExeFile);
+		}
+	}
+	CloseHandle(snap);
+
+	for (i = 0; i < n; i++) {
+		if (*best[i] == L'\0')
+			wcscpy_s(best[i], MAX_PATH, shell_name[i]);
+		if (*best[i] == L'\0')
+			continue;
+		WideCharToMultiByte(CP_UTF8, 0, best[i], -1, name, sizeof name,
+		    NULL, NULL);
+		if ((dot = strrchr(name, '.')) != NULL &&
+		    _stricmp(dot, ".exe") == 0)
+			*dot = '\0';
+		names[i] = xstrdup(name);
+	}
+	free(best);
+	free(shell_name);
+	free(best_start);
+	free(shell_start);
+}
+
+/*
  * Does pid descend from ancestor, or is it ancestor? Each parent must have
  * started before its child, or the child's parent pid was reused by a later
  * process and the chain ends there.

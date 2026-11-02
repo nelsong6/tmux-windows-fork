@@ -210,6 +210,8 @@ session_destroy(struct session *s, int notify, const char *from)
 	s->curw = NULL;
 
 	RB_REMOVE(sessions, &sessions, s);
+	if (RB_EMPTY(&sessions))
+		session_set_closed();
 	if (notify)
 		notify_session("session-closed", s);
 

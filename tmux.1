@@ -3435,6 +3435,31 @@ Rename the current window, or the window at
 .Ar target-window
 if specified, to
 .Ar new-name .
+.It Xo Ic reopen-window
+.Op Fl d
+.Xc
+Reopen the window closed last, and on each run the one closed before it.
+The window comes back in its session, at its place among the session's
+windows, with its panes, layout, folders and name; the session is made again
+if it has gone.
+A pane that ran Claude Code (the pane option
+.Ic @claude-session )
+runs the command in the global option
+.Ic @session-set-resume ,
+with
+.Ql {id}
+replaced by the session's ID; a pane that ran a program with a global option
+.Ic @session-set-restart- Ns Ar program
+runs that; any other pane is a shell.
+Unless
+.Fl d
+is given, the client is switched to the window.
+Windows are recorded only on a server whose global option
+.Ic @session-set-dir
+names a folder; the server also keeps everything needed to rebuild its sessions
+in
+.Pa live/
+there, written whenever it changes.
 .Tg resizep
 .It Xo Ic resize-pane
 .Op Fl DLMRTUZ

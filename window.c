@@ -352,6 +352,7 @@ static void
 window_destroy(struct window *w)
 {
 	log_debug("window @%u destroyed (%d references)", w->id, w->references);
+	session_set_window_destroyed(w);
 
 	window_unzoom(w, 0);
 	RB_REMOVE(windows, &windows, w);
@@ -1055,6 +1056,7 @@ window_pane_destroy(struct window_pane *wp)
 	options_free(wp->options);
 	free((void *)wp->cwd);
 	free(wp->shell);
+	free(wp->session_set_command);
 	cmd_free_argv(wp->argc, wp->argv);
 	colour_palette_free(&wp->palette);
 	free(wp);
@@ -1080,6 +1082,7 @@ window_pane_read_callback(__unused struct bufferevent *bufev, void *data)
 	}
 
 	log_debug("%%%u has %zu bytes", wp->id, size);
+	session_set_output();
 	TAILQ_FOREACH(c, &clients, entry) {
 		if (c->session != NULL && (c->flags & CLIENT_CONTROL))
 			control_write_output(c, wp);

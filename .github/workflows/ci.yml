@@ -135,6 +135,11 @@ jobs:
         run: |
           TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-keep-alive.sh
 
+      - name: Run session-set tests
+        shell: bash
+        run: |
+          TEST_TMUX=./build/Debug/tmux.exe bash regress/win32-run.sh win32-session-set.sh
+
       - name: Run new-window -W tests
         shell: bash
         timeout-minutes: 5

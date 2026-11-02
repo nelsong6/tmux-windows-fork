@@ -2701,6 +2701,8 @@ input_exit_osc(struct input_ctx *ictx)
 		break;
 	case 7:
 		if (utf8_isvalid(p)) {
+			if (sctx->s->path == NULL || strcmp(sctx->s->path, p) != 0)
+				session_set_changed();
 			screen_set_path(sctx->s, p);
 			if (wp != NULL) {
 				server_redraw_window_borders(wp->window);
